@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading Copilot</title>
+    <style>
+        /* ── Reset & Base ── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-card: #1c2128;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+            --accent-blue: #58a6ff;
+            --accent-purple: #bc8cff;
+            --gradient-buy: linear-gradient(135deg, #238636, #2ea043);
+            --gradient-sell: linear-gradient(135deg, #da3633, #f85149);
+            --gradient-hold: linear-gradient(135deg, #9e6a03, #d29922);
+            --radius: 8px;
+            --radius-sm: 4px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+            --shadow-lg: 0 4px 12px rgba(0,0,0,0.4);
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            width: 400px;
+            min-height: 500px;
+            max-height: 600px;
+            overflow-y: auto;
+            font-size: 13px;
+            line-height: 1.5;
+            scrollbar-width: thin;
+            scrollbar-color: var(--border) transparent;
+        }
+        body::-webkit-scrollbar { width: 4px; }
+        body::-webkit-scrollbar-track { background: transparent; }
+        body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        /* ── Layout ── */
+        .container { display: flex; flex-direction: column; height: 100%; }
+        .header {
+            padding: 12px 16px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .header-left { display: flex; align-items: center; gap: 10px; }
+        .header-left h1 {
+            font-size: 15px;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header-right { display: flex; align-items: center; gap: 8px; }
+        .main { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+        .footer {
+            padding: 10px 16px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+
+        /* ── Status Badge ── */
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 11px;
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+        }
+        .status-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--text-muted);
+        }
+        .status-dot.online { background: var(--accent-green); box-shadow: 0 0 4px var(--accent-green); }
+        .status-dot.offline { background: var(--text-muted); }
+        .status-dot.analyzing { background: var(--accent-yellow); animation: pulse 1s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border: none;
+            border-radius: var(--radius);
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary {
+            background: var(--accent-blue);
+            color: #fff;
+        }
+        .btn-primary:hover { background: #4c9aff; box-shadow: 0 0 8px rgba(88,166,255,0.4); }
+        .btn-analyze {
+            background: var(--gradient-buy);
+            color: #fff;
+            padding: 8px 20px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 20px;
+            box-shadow: var(--shadow);
+        }
+        .btn-analyze:hover { box-shadow: 0 0 12px rgba(46,160,67,0.5); transform: translateY(-1px); }
+        .btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            font-size: 16px;
+        }
+        .btn-ghost:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+        .btn-sm { padding: 4px 10px; font-size: 11px; }
+        .btn-danger { background: var(--accent-red); color: #fff; }
+        .btn-danger:hover { background: #ff6b6b; }
+        .btn-icon { width: 28px; height: 28px; padding: 0; border-radius: 50%; font-size: 14px; }
+
+        /* ── Cards ── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px;
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        .card-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* ── Current Analysis ── */
+        .current-analysis { display: flex; flex-direction: column; gap: 8px; }
+        .symbol-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .symbol-info { display: flex; align-items: center; gap: 8px; }
+        .symbol-name {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .symbol-timeframe {
+            font-size: 11px;
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+        }
+        .recommendation-badge {
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .recommendation-badge.buy { background: var(--gradient-buy); color: #fff; }
+        .recommendation-badge.sell { background: var(--gradient-sell); color: #fff; }
+        .recommendation-badge.hold { background: var(--gradient-hold); color: #fff; }
+
+        .price-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .price-value { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+
+        .confidence-bar {
+            width: 100%;
+            height: 4px;
+            background: var(--bg-tertiary);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .confidence-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.5s ease;
+        }
+        .confidence-fill.buy { background: var(--gradient-buy); }
+        .confidence-fill.sell { background: var(--gradient-sell); }
+        .confidence-fill.hold { background: var(--gradient-hold); }
+
+        /* ── Trade Setup ── */
+        .trade-setup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+        .trade-metric {
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            padding: 6px 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .trade-metric-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
+        .trade-metric-value { font-size: 12px; font-weight: 600; }
+        .trade-metric-value.green { color: var(--accent-green); }
+        .trade-metric-value.red { color: var(--accent-red); }
+        .trade-metric-value.yellow { color: var(--accent-yellow); }
+
+        /* ── Stats Row ── */
+        .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .stat-card {
+            text-align: center;
+            padding: 8px 4px;
+        }
+        .stat-value { font-size: 16px; font-weight: 700; }
+        .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
+
+        /* ── History List ── */
+        .history-list { display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
+        .history-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 8px;
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .history-item:hover { background: var(--border); }
+        .history-symbol { font-weight: 600; font-size: 11px; }
+        .history-rec {
+            font-size: 10px;
+            font-weight: 600;
+            padding: 1px 6px;
+            border-radius: 8px;
+        }
+        .history-rec.buy { background: rgba(46,160,67,0.2); color: var(--accent-green); }
+        .history-rec.sell { background: rgba(248,81,73,0.2); color: var(--accent-red); }
+        .history-rec.hold { background: rgba(210,153,34,0.2); color: var(--accent-yellow); }
+        .history-conf { font-size: 10px; color: var(--text-muted); }
+        .history-empty {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 11px;
+            padding: 16px;
+        }
+
+        /* ── Reasoning ── */
+        .reasoning-text {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            max-height: 60px;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            cursor: pointer;
+        }
+        .reasoning-text.expanded { max-height: none; }
+
+        /* ── Loading ── */
+        .loading-spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent-blue);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; padding: 16px; justify-content: center; }
+
+        /* ── Tabs ── */
+        .tabs { display: flex; gap: 2px; background: var(--bg-tertiary); border-radius: var(--radius); padding: 2px; }
+        .tab {
+            flex: 1;
+            padding: 6px 8px;
+            text-align: center;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-muted);
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .tab.active { background: var(--bg-card); color: var(--text-primary); }
+        .tab:hover:not(.active) { color: var(--text-secondary); }
+
+        /* ── Animations ── */
+        .fade-in { animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .slide-up { animation: slideUp 0.3s ease; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* ── Section Toggle ── */
+        .section-hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-left">
+                <h1>AI Trading Copilot</h1>
+            </div>
+            <div class="header-right">
+                <span class="status-badge">
+                    <span id="status-dot" class="status-dot offline"></span>
+                    <span id="status-text">Disconnected</span>
+                </span>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main" id="main-content">
+            <!-- Loading state -->
+            <div id="loading-state" class="loading-text">
+                <span class="loading-spinner"></span>
+                Loading...
+            </div>
+
+            <!-- Not connected state -->
+            <div id="login-prompt" class="card section-hidden">
+                <div style="text-align:center;padding:20px 12px;">
+                    <div style="font-size:32px;margin-bottom:12px;">📈</div>
+                    <h2 style="font-size:16px;font-weight:600;margin-bottom:8px;">Connect to Backend</h2>
+                    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">
+                        Login to save analyses, track accuracy, and maintain your trading journal.
+                    </p>
+                    <div id="login-form" style="display:flex;flex-direction:column;gap:8px;max-width:280px;margin:0 auto;">
+                        <input id="login-email" type="email" placeholder="Email" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;" />
+                        <input id="login-password" type="password" placeholder="Password" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;" />
+                        <button id="login-btn" class="btn btn-primary" style="width:100%;">Login / Register</button>
+                        <div id="login-error" style="color:var(--accent-red);font-size:11px;display:none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dashboard (shown when connected) -->
+            <div id="dashboard" class="section-hidden" style="display:flex;flex-direction:column;gap:12px;">
+                <!-- Current Analysis -->
+                <div class="card current-analysis fade-in">
+                    <div class="symbol-bar">
+                        <div class="symbol-info">
+                            <span class="symbol-name" id="current-symbol">---</span>
+                            <span class="symbol-timeframe" id="current-timeframe">---</span>
+                        </div>
+                        <span class="recommendation-badge hold" id="current-rec">HOLD</span>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-value" id="current-price">---</span>
+                        <span>Confidence: <strong id="current-confidence">0%</strong></span>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill hold" id="confidence-fill" style="width:0%"></div>
+                    </div>
+                    <div id="trade-setup-container" class="trade-setup section-hidden">
+                        <div class="trade-metric">
+                            <span class="trade-metric-label">Entry</span>
+                            <span class="trade-metric-value green" id="entry-price">---</span>
+                        </div>
+                        <div class="trade-metric">
+                            <span class="trade-metric-label">Stop Loss</span>
+                            <span class="trade-metric-value red" id="stop-loss">---</span>
+                        </div>
+                        <div class="trade-metric">
+                            <span class="trade-metric-label">Take Profit</span>
+                            <span class="trade-metric-value green" id="take-profit">---</span>
+                        </div>
+                        <div class="trade-metric">
+                            <span class="trade-metric-label">R:R Ratio</span>
+                            <span class="trade-metric-value yellow" id="risk-reward">---</span>
+                        </div>
+                    </div>
+                    <div class="reasoning-text" id="reasoning-text">No analysis yet. Click "Analyze Market" to start.</div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div style="display:flex;gap:8px;">
+                    <button id="analyze-btn" class="btn btn-analyze" style="flex:1;">
+                        ⚡ Analyze Market
+                    </button>
+                </div>
+
+                <!-- Stats Row -->
+                <div class="stats-row fade-in">
+                    <div class="card stat-card">
+                        <div class="stat-value" id="stat-analyses-today" style="color:var(--accent-blue);">0</div>
+                        <div class="stat-label">Today</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-value" id="stat-win-rate" style="color:var(--accent-green);">--%</div>
+                        <div class="stat-label">Win Rate</div>
+                    </div>
+                    <div class="card stat-card">
+                        <div class="stat-value" id="stat-avg-conf" style="color:var(--accent-yellow);">--%</div>
+                        <div class="stat-label">Avg Conf</div>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="tabs" role="tablist">
+                    <button class="tab active" data-tab="recent" role="tab">Recent</button>
+                    <button class="tab" data-tab="watchlist" role="tab">Watchlist</button>
+                </div>
+
+                <!-- Recent Analyses -->
+                <div id="tab-recent" class="card fade-in" role="tabpanel">
+                    <div class="card-header">
+                        <span class="card-title">Recent Analyses</span>
+                        <button class="btn btn-ghost btn-sm" id="view-all-btn">View all →</button>
+                    </div>
+                    <div class="history-list" id="history-list">
+                        <div class="history-empty">No analyses yet. Analyze a chart to get started.</div>
+                    </div>
+                </div>
+
+                <!-- Watchlist -->
+                <div id="tab-watchlist" class="card section-hidden fade-in" role="tabpanel">
+                    <div class="card-header">
+                        <span class="card-title">Watchlist</span>
+                        <button class="btn btn-ghost btn-sm" id="edit-watchlist-btn">Edit</button>
+                    </div>
+                    <div class="history-list" id="watchlist-list">
+                        <div class="history-empty">No symbols in watchlist. Add symbols through settings.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div style="display:flex;gap:4px;">
+                <button id="settings-btn" class="btn btn-ghost btn-sm" title="Settings">⚙️ Settings</button>
+                <button id="journal-btn" class="btn btn-ghost btn-sm" title="Trade Journal">📓 Journal</button>
+            </div>
+            <div style="display:flex;gap:4px;align-items:center;">
+                <button id="refresh-btn" class="btn btn-ghost btn-icon" title="Refresh Stats">🔄</button>
+                <button id="theme-toggle" class="btn btn-ghost btn-icon" title="Toggle Theme">🌙</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="popup.js" type="module"></script>
+</body>
+</html>

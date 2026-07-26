@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Trading Copilot — Settings</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --bg-card: #1c2128;
+            --border: #30363d;
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --accent-green: #3fb950;
+            --accent-red: #f85149;
+            --accent-yellow: #d29922;
+            --accent-blue: #58a6ff;
+            --accent-purple: #bc8cff;
+            --radius: 8px;
+            --radius-sm: 4px;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 14px;
+            line-height: 1.5;
+            min-height: 100vh;
+        }
+        .app { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+        h1 { font-size: 22px; font-weight: 700; margin-bottom: 20px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary); }
+        .tabs { display: flex; gap: 2px; background: var(--bg-tertiary); border-radius: var(--radius); padding: 3px; margin-bottom: 20px; }
+        .tab { flex: 1; padding: 8px 16px; text-align: center; font-size: 13px; font-weight: 500; color: var(--text-muted); border: none; background: transparent; border-radius: 6px; cursor: pointer; transition: all 0.15s; }
+        .tab.active { background: var(--bg-card); color: var(--text-primary); }
+        .tab:hover:not(.active) { color: var(--text-secondary); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+        .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; }
+        .btn-primary { background: var(--accent-blue); color: #fff; }
+        .btn-primary:hover { background: #4c9aff; }
+        .btn-danger { background: var(--accent-red); color: #fff; }
+        .btn-sm { padding: 4px 10px; font-size: 11px; }
+        .btn-ghost { background: transparent; color: var(--text-secondary); }
+        .btn-ghost:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+        input, select, textarea {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-size: 13px;
+            width: 100%;
+        }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent-blue); }
+        label { font-size: 12px; font-weight: 500; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+        .form-group { margin-bottom: 12px; }
+        .history-item, .alert-item, .watchlist-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg-tertiary); border-radius: var(--radius-sm); margin-bottom: 4px; font-size: 13px; }
+        .badge { padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 600; }
+        .badge.buy { background: rgba(46,160,67,0.2); color: var(--accent-green); }
+        .badge.sell { background: rgba(248,81,73,0.2); color: var(--accent-red); }
+        .badge.hold { background: rgba(210,153,34,0.2); color: var(--accent-yellow); }
+        .empty-state { text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+        .stat-card { text-align: center; padding: 16px 8px; background: var(--bg-tertiary); border-radius: var(--radius); }
+        .stat-value { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+        .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; }
+        hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+        .alert-config { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .alert-config label { display: flex; align-items: center; gap: 8px; font-weight: 400; font-size: 13px; cursor: pointer; padding: 6px 8px; border-radius: 4px; }
+        .alert-config label:hover { background: var(--bg-tertiary); }
+        input[type="checkbox"] { width: auto; accent-color: var(--accent-blue); }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <h1>AI Trading Copilot — Settings</h1>
+
+        <div class="tabs">
+            <button class="tab active" data-tab="journal">Trade Journal</button>
+            <button class="tab" data-tab="alerts">Smart Alerts</button>
+            <button class="tab" data-tab="watchlist">Watchlist</button>
+            <button class="tab" data-tab="backend">Connection</button>
+            <button class="tab" data-tab="about">About</button>
+        </div>
+
+        <!-- Trade Journal Tab -->
+        <div class="tab-content active" id="tab-journal">
+            <div class="stats-grid" id="journal-stats">
+                <div class="stat-card"><div class="stat-value" id="j-total" style="color:var(--accent-blue);">0</div><div class="stat-label">Total Trades</div></div>
+                <div class="stat-card"><div class="stat-value" id="j-winrate" style="color:var(--accent-green);">--</div><div class="stat-label">Win Rate</div></div>
+                <div class="stat-card"><div class="stat-value" id="j-pnl" style="color:var(--accent-green);">--</div><div class="stat-label">Total P&L</div></div>
+                <div class="stat-card"><div class="stat-value" id="j-avgwin" style="color:var(--accent-green);">--</div><div class="stat-label">Avg Win</div></div>
+            </div>
+
+            <div class="card">
+                <h2>Record Trade</h2>
+                <div class="form-row">
+                    <div class="form-group"><label>Symbol</label><input id="tj-symbol" placeholder="BTCUSDT" /></div>
+                    <div class="form-group"><label>Side</label><select id="tj-side"><option value="LONG">LONG</option><option value="SHORT">SHORT</option></select></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Entry Price</label><input id="tj-entry" type="number" step="any" placeholder="50000" /></div>
+                    <div class="form-group"><label>Exit Price</label><input id="tj-exit" type="number" step="any" placeholder="55000" /></div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Quantity</label><input id="tj-qty" type="number" step="any" placeholder="0.1" /></div>
+                    <div class="form-group"><label>P&L %</label><input id="tj-pnl-pct" type="number" step="any" placeholder="10" /></div>
+                </div>
+                <div class="form-group"><label>Reason</label><input id="tj-reason" placeholder="Why did you enter this trade?" /></div>
+                <div class="form-group"><label>Emotion / Mistakes / Lessons</label><textarea id="tj-notes" rows="2" placeholder="What did you feel? What went wrong? What did you learn?" style="resize:vertical;"></textarea></div>
+                <button class="btn btn-primary" id="tj-save-btn">Save Trade</button>
+                <span id="tj-status" style="font-size:12px;color:var(--text-muted);margin-left:12px;"></span>
+            </div>
+
+            <div class="card">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <h2 style="margin:0;">Trade History</h2>
+                    <input id="tj-search" placeholder="Search by symbol..." style="width:200px;padding:6px 10px;font-size:12px;" />
+                </div>
+                <div id="journal-list"><div class="empty-state">No trades recorded yet.</div></div>
+            </div>
+        </div>
+
+        <!-- Smart Alerts Tab -->
+        <div class="tab-content" id="tab-alerts">
+            <div class="card">
+                <h2>Alert Conditions</h2>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">Configure which conditions trigger alerts when you're on a supported chart.</p>
+                <div class="alert-config">
+                    <label><input type="checkbox" data-alert="trend_change" checked /> Trend Change</label>
+                    <label><input type="checkbox" data-alert="rsi_overbought" checked /> RSI Overbought (&gt;70)</label>
+                    <label><input type="checkbox" data-alert="rsi_oversold" checked /> RSI Oversold (&lt;30)</label>
+                    <label><input type="checkbox" data-alert="macd_crossover" checked /> MACD Crossover</label>
+                    <label><input type="checkbox" data-alert="support_broken" /> Support Broken</label>
+                    <label><input type="checkbox" data-alert="resistance_broken" /> Resistance Broken</label>
+                    <label><input type="checkbox" data-alert="volume_spike" /> Volume Spike</label>
+                    <label><input type="checkbox" data-alert="high_confidence" checked /> High Confidence Setup (&gt;75%)</label>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Active Alerts</h2>
+                <div id="active-alerts"><div class="empty-state">No active alerts. Alerts fire automatically when conditions are met.</div></div>
+            </div>
+        </div>
+
+        <!-- Watchlist Tab -->
+        <div class="tab-content" id="tab-watchlist">
+            <div class="card">
+                <h2>Your Watchlist</h2>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px;">Symbols to monitor on your dashboard. One-click analyze any symbol.</p>
+                <div style="display:flex;gap:8px;margin-bottom:12px;">
+                    <input id="wl-add-input" placeholder="Add symbol (e.g. BTCUSDT)" style="flex:1;" />
+                    <button class="btn btn-primary" id="wl-add-btn">Add</button>
+                </div>
+                <div id="watchlist-items"><div class="empty-state">Watchlist is empty.</div></div>
+            </div>
+        </div>
+
+        <!-- Connection Tab -->
+        <div class="tab-content" id="tab-backend">
+            <div class="card">
+                <h2>Backend Connection</h2>
+                <div class="form-group">
+                    <label>Backend URL</label>
+                    <input id="backend-url" value="http://localhost:3000" />
+                </div>
+                <div class="form-row">
+                    <div class="form-group"><label>Email</label><input id="be-email" type="email" /></div>
+                    <div class="form-group"><label>Password</label><input id="be-password" type="password" /></div>
+                </div>
+                <button class="btn btn-primary" id="be-connect-btn">Connect</button>
+                <button class="btn btn-danger" id="be-disconnect-btn" style="margin-left:8px;">Disconnect</button>
+                <span id="be-status" style="font-size:12px;color:var(--text-muted);margin-left:12px;"></span>
+            </div>
+        </div>
+
+        <!-- About Tab -->
+        <div class="tab-content" id="tab-about">
+            <div class="card">
+                <h2>About AI Trading Copilot</h2>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">
+                    Version 1.0.0 — AI-powered trading analysis companion for TradingView and other platforms.
+                </p>
+                <p style="font-size:13px;color:var(--text-secondary);margin-bottom:8px;">
+                    Features: Technical analysis (SMA, EMA, RSI, MACD, ADX, Bollinger, VWAP), pattern recognition, 
+                    trend analysis, support/resistance, volume analysis, risk assessment, and AI-powered explanations.
+                </p>
+                <p style="font-size:12px;color:var(--text-muted);">
+                    Data sources: Binance API (primary), CoinGecko (fallback). All analysis is performed locally.
+                    Backend saves analysis history for accuracy tracking.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // ── Tab switching ──
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById(`tab-${tab.dataset.tab}`)?.classList.add('active');
+            });
+        });
+
+        // ── Utility: send message to background ──
+        function sendMsg(msg) {
+            return new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(msg, response => {
+                    if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+                    else resolve(response);
+                });
+            });
+        }
+
+        // ── Backend Connection ──
+        const beConnectBtn = document.getElementById('be-connect-btn');
+        const beDisconnectBtn = document.getElementById('be-disconnect-btn');
+        const beStatus = document.getElementById('be-status');
+        const beEmail = document.getElementById('be-email');
+        const bePassword = document.getElementById('be-password');
+        const backendUrl = document.getElementById('backend-url');
+
+        beConnectBtn.addEventListener('click', async () => {
+            const email = beEmail.value.trim();
+            const password = bePassword.value.trim();
+            if (!email || !password) { beStatus.textContent = 'Email and password required'; return; }
+            beConnectBtn.disabled = true;
+            beConnectBtn.textContent = 'Connecting...';
+            try {
+                const result = await sendMsg({ type: 'BACKEND_LOGIN', payload: { email, password } });
+                if (result?.success) {
+                    beStatus.textContent = 'Connected!';
+                    beStatus.style.color = 'var(--accent-green)';
+                } else {
+                    beStatus.textContent = result?.error || 'Connection failed';
+                    beStatus.style.color = 'var(--accent-red)';
+                }
+            } catch (err) {
+                beStatus.textContent = err.message;
+                beStatus.style.color = 'var(--accent-red)';
+            } finally {
+                beConnectBtn.disabled = false;
+                beConnectBtn.textContent = 'Connect';
+            }
+        });
+
+        beDisconnectBtn.addEventListener('click', async () => {
+            await sendMsg({ type: 'BACKEND_LOGOUT' });
+            beStatus.textContent = 'Disconnected';
+            beStatus.style.color = 'var(--text-muted)';
+        });
+
+        // ── Trade Journal ──
+        const tjSaveBtn = document.getElementById('tj-save-btn');
+        const tjStatus = document.getElementById('tj-status');
+
+        tjSaveBtn.addEventListener('click', async () => {
+            const entry = parseFloat(document.getElementById('tj-entry').value);
+            const exit = document.getElementById('tj-exit').value ? parseFloat(document.getElementById('tj-exit').value) : undefined;
+            const qty = document.getElementById('tj-qty').value ? parseFloat(document.getElementById('tj-qty').value) : undefined;
+            const pnlPct = document.getElementById('tj-pnl-pct').value ? parseFloat(document.getElementById('tj-pnl-pct').value) : undefined;
+
+            const trade = {
+                symbol: document.getElementById('tj-symbol').value.toUpperCase(),
+                side: document.getElementById('tj-side').value,
+                entryPrice: entry,
+                exitPrice: exit,
+                quantity: qty,
+                pnlPercent: pnlPct,
+                reason: document.getElementById('tj-reason').value,
+                lessons: document.getElementById('tj-notes').value,
+            };
+
+            if (!trade.symbol || !trade.entryPrice) {
+                tjStatus.textContent = 'Symbol and entry price required';
+                tjStatus.style.color = 'var(--accent-red)';
+                return;
+            }
+
+            tjSaveBtn.disabled = true;
+            try {
+                await sendMsg({ type: 'SAVE_TRADE_JOURNAL', payload: trade });
+                tjStatus.textContent = 'Trade saved!';
+                tjStatus.style.color = 'var(--accent-green)';
+                // Clear form
+                document.getElementById('tj-symbol').value = '';
+                document.getElementById('tj-entry').value = '';
+                document.getElementById('tj-exit').value = '';
+                document.getElementById('tj-qty').value = '';
+                document.getElementById('tj-pnl-pct').value = '';
+                document.getElementById('tj-reason').value = '';
+                document.getElementById('tj-notes').value = '';
+            } catch (err) {
+                tjStatus.textContent = err.message;
+                tjStatus.style.color = 'var(--accent-red)';
+            } finally {
+                tjSaveBtn.disabled = false;
+            }
+        });
+
+        // ── Watchlist ──
+        const wlAddInput = document.getElementById('wl-add-input');
+        const wlAddBtn = document.getElementById('wl-add-btn');
+        const wlItems = document.getElementById('watchlist-items');
+
+        wlAddBtn.addEventListener('click', async () => {
+            const symbol = wlAddInput.value.trim().toUpperCase();
+            if (!symbol) return;
+            try {
+                const result = await sendMsg({ type: 'ADD_TO_WATCHLIST', payload: { symbol } });
+                if (result?.success) {
+                    wlAddInput.value = '';
+                    loadWatchlist();
+                }
+            } catch { /* ignore */ }
+        });
+
+        async function loadWatchlist() {
+            try {
+                const result = await sendMsg({ type: 'GET_WATCHLIST' });
+                const items = result?.items || result || [];
+                if (items.length === 0) {
+                    wlItems.innerHTML = '<div class="empty-state">Watchlist is empty.</div>';
+                    return;
+                }
+                wlItems.innerHTML = items.map(s =>
+                    `<div class="watchlist-item">
+                        <span style="font-weight:600;">${s.symbol || s}</span>
+                        <button class="btn btn-ghost btn-sm" onclick="chrome.runtime.sendMessage({type:'REMOVE_FROM_WATCHLIST',payload:{symbol:'${s.symbol || s}'}}).then(()=>location.reload())">✕</button>
+                    </div>`
+                ).join('');
+            } catch {
+                wlItems.innerHTML = '<div class="empty-state">Could not load watchlist.</div>';
+            }
+        }
+
+        // ── Load watchlist on init ──
+        loadWatchlist();
+    </script>
+</body>
+</html>

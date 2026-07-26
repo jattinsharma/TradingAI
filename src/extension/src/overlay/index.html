@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Overlay</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        :root {
+            --bg-card: rgba(13, 17, 23, 0.92);
+            --bg-secondary: rgba(22, 27, 34, 0.9);
+            --bg-tertiary: rgba(33, 38, 45, 0.85);
+            --border: rgba(48, 54, 61, 0.8);
+            --text-primary: #e6edf3;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --green: #3fb950;
+            --red: #f85149;
+            --yellow: #d29922;
+            --blue: #58a6ff;
+            --purple: #bc8cff;
+            --gradient-buy: linear-gradient(135deg, #238636, #2ea043);
+            --gradient-sell: linear-gradient(135deg, #da3633, #f85149);
+            --gradient-hold: linear-gradient(135deg, #9e6a03, #d29922);
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            font-size: 12px;
+            color: var(--text-primary);
+            background: transparent;
+            -webkit-font-smoothing: antialiased;
+        }
+        #overlay-container {
+            width: 320px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            user-select: none;
+        }
+        /* Header */
+        .overlay-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            cursor: move;
+        }
+        .header-left { display: flex; align-items: center; gap: 8px; }
+        .symbol-text { font-size: 15px; font-weight: 700; }
+        .timeframe-badge {
+            font-size: 10px;
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .platform-badge {
+            font-size: 9px;
+            color: var(--text-muted);
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: rgba(88,166,255,0.1);
+            border: 1px solid rgba(88,166,255,0.2);
+        }
+        .header-controls { display: flex; gap: 4px; }
+        .header-btn {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 14px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: all 0.15s;
+        }
+        .header-btn:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+
+        /* Content */
+        .overlay-content { padding: 12px 14px; }
+
+        /* Recommendation Box */
+        .rec-box {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        .rec-box.buy { background: var(--gradient-buy); }
+        .rec-box.sell { background: var(--gradient-sell); }
+        .rec-box.hold { background: var(--gradient-hold); }
+        .rec-box.analyzing {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+        }
+        .rec-text { font-size: 18px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
+        .rec-sub {
+            font-size: 11px;
+            opacity: 0.85;
+            margin-top: 2px;
+        }
+
+        /* Confidence Bar */
+        .conf-bar {
+            width: 100%;
+            height: 3px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 2px;
+            overflow: hidden;
+            margin: 6px 0;
+        }
+        .conf-fill {
+            height: 100%;
+            border-radius: 2px;
+            transition: width 0.6s ease;
+        }
+        .conf-fill.buy { background: #fff; }
+        .conf-fill.sell { background: #fff; }
+        .conf-fill.hold { background: #fff; }
+
+        /* Price Row */
+        .price-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-secondary);
+            padding: 6px 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 8px;
+        }
+        .price-value { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+
+        /* Trade Setup Grid */
+        .setup-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+            margin-bottom: 8px;
+        }
+        .setup-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 5px 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            font-size: 11px;
+        }
+        .setup-label { color: var(--text-muted); }
+        .setup-value { font-weight: 600; }
+        .setup-value.green { color: var(--green); }
+        .setup-value.red { color: var(--red); }
+        .setup-value.yellow { color: var(--yellow); }
+        .setup-value.white { color: var(--text-primary); }
+
+        /* Section Headers */
+        .section-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin: 8px 0 4px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .section-label::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border);
+        }
+
+        /* Reasoning */
+        .reasoning-box {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+            padding: 6px 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            max-height: 60px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: max-height 0.3s ease;
+            margin-bottom: 8px;
+        }
+        .reasoning-box.expanded { max-height: none; }
+        .reasoning-box:hover { background: var(--border); }
+
+        /* Risks */
+        .risks-list {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .risk-item {
+            display: flex;
+            align-items: start;
+            gap: 6px;
+            font-size: 10px;
+            color: var(--text-secondary);
+            padding: 3px 6px;
+            background: rgba(248,81,73,0.08);
+            border-radius: 3px;
+            border-left: 2px solid var(--red);
+        }
+        .risk-icon { color: var(--red); font-size: 10px; }
+
+        /* Loading / Error */
+        .loading-state {
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--blue);
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error-state {
+            text-align: center;
+            padding: 20px;
+            color: var(--red);
+            font-size: 12px;
+        }
+
+        /* Footer */
+        .overlay-footer {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 4px;
+            padding: 6px 14px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border);
+        }
+
+        /* Animations */
+        @keyframes slideDown {
+            from { opacity: 0; max-height: 0; }
+            to { opacity: 1; max-height: 200px; }
+        }
+        .animate-in {
+            animation: slideDown 0.3s ease forwards;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <div id="overlay-container">
+        <!-- Header -->
+        <div class="overlay-header" id="overlay-header">
+            <div class="header-left">
+                <span class="symbol-text" id="symbol-display">---</span>
+                <span class="timeframe-badge" id="timeframe-display">---</span>
+                <span class="platform-badge" id="platform-display">TV</span>
+            </div>
+            <div class="header-controls">
+                <button class="header-btn" id="pin-toggle" title="Pin">📌</button>
+                <button class="header-btn" id="close-overlay" title="Close">✕</button>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="overlay-content" id="overlay-content">
+            <!-- Recommendation -->
+            <div class="rec-box analyzing" id="rec-box">
+                <div class="rec-text" id="rec-text">ANALYZING</div>
+                <div class="rec-sub" id="rec-sub">Computing signals...</div>
+                <div class="conf-bar">
+                    <div class="conf-fill" id="conf-fill" style="width:0%"></div>
+                </div>
+            </div>
+
+            <!-- Price -->
+            <div class="price-row">
+                <span>Current Price</span>
+                <span class="price-value" id="price-display">---</span>
+            </div>
+
+            <!-- Trade Setup -->
+            <div class="setup-grid" id="setup-grid" style="display:none;">
+                <div class="setup-item">
+                    <span class="setup-label">Entry</span>
+                    <span class="setup-value green" id="setup-entry">---</span>
+                </div>
+                <div class="setup-item">
+                    <span class="setup-label">Stop Loss</span>
+                    <span class="setup-value red" id="setup-sl">---</span>
+                </div>
+                <div class="setup-item">
+                    <span class="setup-label">Take Profit</span>
+                    <span class="setup-value green" id="setup-tp">---</span>
+                </div>
+                <div class="setup-item">
+                    <span class="setup-label">R:R Ratio</span>
+                    <span class="setup-value yellow" id="setup-rr">---</span>
+                </div>
+                <div class="setup-item">
+                    <span class="setup-label">Risk</span>
+                    <span class="setup-value white" id="setup-risk">---</span>
+                </div>
+                <div class="setup-item">
+                    <span class="setup-label">Duration</span>
+                    <span class="setup-value white" id="setup-duration">---</span>
+                </div>
+            </div>
+
+            <!-- Reasoning -->
+            <div class="section-label">Reasoning</div>
+            <div class="reasoning-box" id="reasoning-box">No analysis yet.</div>
+
+            <!-- Risks -->
+            <div class="section-label" id="risks-label" style="display:none;">Key Risks</div>
+            <div class="risks-list" id="risks-list"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="overlay-footer">
+            <button class="header-btn" id="reanalyze-btn" title="Re-analyze">🔄</button>
+        </div>
+    </div>
+
+    <script src="index.js" type="module" defer></script>
+</body>
+</html>
