@@ -1,3 +1,10 @@
+import * as dns from 'dns';
+
+// Force Node.js to use public DNS servers instead of the system DNS
+// Fixes 'querySrv ECONNREFUSED' error with MongoDB Atlas on some networks
+// where the Windows DNS resolver refuses SRV record queries from Node.js
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';

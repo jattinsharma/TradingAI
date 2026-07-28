@@ -12,26 +12,22 @@
     "incremental": true,
     "skipLibCheck": true,
     "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "strictFunctionTypes": true,
-    "noImplicitThis": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "allowJs": true,
-    "baseUrl": ".",
+    "baseUrl": "src",
     "paths": {
-      "*": ["node_modules/*"]
+      "@/*": ["*"],
+      "@modules/*": ["modules/*"],
+      "@database/*": ["database/*"],
+      "@common/*": ["common/*"]
     }
   },
+  "include": ["src/**/*.ts"],
   "exclude": [
     "node_modules",
     "dist",
-    "test",
-    "test-dist",
-    "**/*.spec.ts"
+    "**/*.spec.ts",
+    "**/*.test.ts"
   ]
 }
