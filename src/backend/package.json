@@ -2,7 +2,7 @@
   "name": "universal-ai-trading-copilot-backend",
   "version": "1.0.0",
   "description": "Backend API for Universal AI Trading Copilot",
-  "main": "src/backend/src/main.ts",
+  "main": "dist/main.js",
   "scripts": {
     "prebuild": "rimraf dist",
     "build": "tsc -p tsconfig.build.json",
