@@ -4,8 +4,6 @@
  * @types/passport-local stays in devDependencies for full type-checking during development.
  */
 declare module 'passport-local' {
-  import { Request } from 'express';
-
   interface IStrategyOptions {
     usernameField?: string;
     passwordField?: string;
@@ -26,7 +24,7 @@ declare module 'passport-local' {
   class Strategy {
     constructor(options: IStrategyOptions, verify?: VerifyFunction);
     name: string;
-    authenticate(req: Request, options?: unknown): void;
+    authenticate(req: any, options?: unknown): void;
   }
 
   export { Strategy, IStrategyOptions, IVerifyOptions, VerifyFunction };

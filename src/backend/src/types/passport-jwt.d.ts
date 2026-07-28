@@ -4,10 +4,8 @@
  * @types/passport-jwt stays in devDependencies for full type-checking during development.
  */
 declare module 'passport-jwt' {
-  import { Request } from 'express';
-
   interface StrategyOptions {
-    jwtFromRequest?: (req: Request) => string | null;
+    jwtFromRequest?: (req: any) => string | null;
     secretOrKey?: string | Buffer;
     issuer?: string;
     audience?: string;
@@ -24,15 +22,15 @@ declare module 'passport-jwt' {
   class Strategy {
     constructor(options: StrategyOptions, verify?: VerifyFunction);
     name: string;
-    authenticate(req: Request, options?: unknown): void;
+    authenticate(req: any, options?: unknown): void;
   }
 
   const ExtractJwt: {
-    fromAuthHeaderAsBearerToken(): (req: Request) => string | null;
-    fromHeader(headerName: string): (req: Request) => string | null;
-    fromBodyField(fieldName: string): (req: Request) => string | null;
-    fromUrlQueryParameter(paramName: string): (req: Request) => string | null;
-    fromAuthHeaderWithScheme(authScheme: string): (req: Request) => string | null;
+    fromAuthHeaderAsBearerToken(): (req: any) => string | null;
+    fromHeader(headerName: string): (req: any) => string | null;
+    fromBodyField(fieldName: string): (req: any) => string | null;
+    fromUrlQueryParameter(paramName: string): (req: any) => string | null;
+    fromAuthHeaderWithScheme(authScheme: string): (req: any) => string | null;
   };
 
   export { Strategy, StrategyOptions, ExtractJwt, VerifyCallback, VerifyFunction };
