@@ -20,7 +20,7 @@ declare module 'passport-local' {
   type VerifyFunction = (
     username: string,
     password: string,
-    done: (error: any, user?: Express.User | false, options?: IVerifyOptions) => void,
+    done: (error: any, user?: any | false, options?: IVerifyOptions) => void,
   ) => void;
 
   class Strategy {

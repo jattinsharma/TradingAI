@@ -42,3 +42,4 @@ docker-compose.override.yml
 # Misc
 *.tsbuildinfo
 .eslintcache
+render-test/

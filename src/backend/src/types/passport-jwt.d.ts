@@ -17,7 +17,7 @@ declare module 'passport-jwt' {
     jsonWebTokenOptions?: Record<string, unknown>;
   }
 
-  type VerifyCallback = (error: any, user?: Express.User | false) => void;
+  type VerifyCallback = (error: any, user?: any | false) => void;
 
   type VerifyFunction = (payload: Record<string, unknown>, done: VerifyCallback) => void;
 
