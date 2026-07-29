@@ -157,24 +157,24 @@ export class ChartStateManager {
 
         const rawSymbol = domData.symbol !== 'UNKNOWN' ? domData.symbol : '';
 
-    // Check for specific failures before creating state
-    if (!rawSymbol) {
-      return createFailedChartState('TICKER_NOT_FOUND', now);
-    }
+        // Check for specific failures before creating state
+        if (!rawSymbol) {
+          return createFailedChartState('TICKER_NOT_FOUND', now);
+        }
 
-    const state = createSuccessfulChartState(
-      rawSymbol,
-      domData.timeframe || '1D',
-      null, // exchange — not extracted from DOM yet
-      domData.currentPrice,
-      'tradingview',
-      now,
-    );
+        const state = createSuccessfulChartState(
+          rawSymbol,
+          domData.timeframe || '1D',
+          null, // exchange — not extracted from DOM yet
+          domData.currentPrice,
+          'tradingview',
+          now,
+        );
 
-    // Update tracking variables
-    this.lastSymbol = rawSymbol;
-    this.lastTimeframe = domData.timeframe || '1D';
-    this.lastPrice = state.currentPrice;
+        // Update tracking variables
+        this.lastSymbol = rawSymbol;
+        this.lastTimeframe = domData.timeframe || '1D';
+        this.lastPrice = state.currentPrice;
 
         return state;
       } catch (error) {
