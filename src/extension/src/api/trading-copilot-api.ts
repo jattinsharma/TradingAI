@@ -4,7 +4,6 @@
  *
  * The backend URL is centrally configured in config.ts.
  * Default: https://tradingai-4dq2.onrender.com (production)
- * Local dev: http://localhost:3000 (set via Options page → Connection tab)
  */
 import { PRODUCTION_BACKEND_URL } from './config';
 
@@ -213,14 +212,14 @@ export class TradingCopilotApi {
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
           throw new Error(
             `Cannot connect to backend at ${this.baseUrl}. ` +
-            'Make sure the backend server is running (npm run start:dev). ' +
-            'If it is running, check that CORS is configured to allow requests from the extension.'
+            'The backend server may be down or unreachable. ' +
+            'Check your internet connection and ensure the backend URL is correct in Settings → Connection.'
           );
         }
         if (error instanceof DOMException && error.name === 'AbortError') {
           throw new Error(
             `Request to ${path} timed out. The backend at ${this.baseUrl} did not respond within 10 seconds. ` +
-            'Make sure the backend is running and reachable.'
+            'The server may be under heavy load or experiencing network issues.'
           );
         }
 
@@ -324,5 +323,5 @@ export class TradingCopilotApi {
 // Singleton that gets configured at runtime
 // Default: PRODUCTION_BACKEND_URL (https://tradingai-4dq2.onrender.com)
 // The background service worker calls initFromStorage() on startup.
-// Users can switch to LOCAL_BACKEND_URL (http://localhost:3000) via Options page.
+// Users can customize the URL via Settings → Connection if they run their own backend.
 export const tradingCopilotApi = new TradingCopilotApi();

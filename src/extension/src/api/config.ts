@@ -9,20 +9,12 @@
  * 2. Fall back to PRODUCTION_BACKEND_URL if nothing is stored
  * 3. Allow runtime override via setBackendUrl() for dynamic reconfiguration
  *
- * ── Local Development ──
- * To use a local backend during development:
- * a) Open the extension's Options page (right-click extension icon → Settings)
- * b) Go to the "Connection" tab
- * c) Change the Backend URL to: http://localhost:3000
- * d) Click "Connect"
- *
- * Or set it programmatically:
- *   import { setBackendUrl } from './config';
- *   setBackendUrl('http://localhost:3000');
+ * The production backend (https://tradingai-4dq2.onrender.com) is always the
+ * default. Changing to a different URL should only be done for local development
+ * by advanced users who have the backend running on their own machine.
  */
 
 export const PRODUCTION_BACKEND_URL = 'https://tradingai-4dq2.onrender.com';
-export const LOCAL_BACKEND_URL = 'http://localhost:3000';
 
 const STORAGE_KEY = 'backendUrl';
 
