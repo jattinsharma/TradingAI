@@ -279,6 +279,25 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       case 'ANALYSIS_FETCH_REQUEST':
         await handleAnalysisFetch(message.payload, sendResponse);
         return;
+      case 'GET_CHART_INFO':
+        // Popup asks for current chart data — proxy to content script
+        // When popup sends via chrome.runtime.sendMessage, sender.tab is undefined
+        // so we resolve the active tab ourselves as fallback.
+        const chartInfoTabId = sender.tab?.id;
+        if (chartInfoTabId) {
+          handleGetChartInfo(chartInfoTabId, sendResponse);
+        } else {
+          // Popup sender has no tab context — query active tab
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const activeTabId = tabs[0]?.id;
+            if (activeTabId) {
+              handleGetChartInfo(activeTabId, sendResponse);
+            } else {
+              sendResponse({ error: 'No active tab found', symbol: null, timeframe: null });
+            }
+          });
+        }
+        return;
       default:
         console.warn('[Background] Unknown message type:', message.type);
         sendResponse({ error: 'Unknown message type' });
@@ -298,50 +317,20 @@ async function handleAnalysisRequest(tabId: number | undefined, payload: any): P
     throw new Error('Service not initialized');
   }
 
-  if (!tabId) {
-    console.warn('[Background] No tab ID provided for analysis request, using default symbol');
-    // Still attempt analysis with default symbol
-  }    try {
-      let symbol = 'BTC-USD';
-      let timeframe = '1D';
-      let platform = '';  // Platform from content script (e.g. 'tradingview')
+  // ── Require symbol in payload — never hardcode a default symbol ──
+  if (!payload || !payload.symbol) {
+    console.error('[Background] ANALYSIS REJECTED: no symbol provided in payload');
+    throw new Error(
+      'Cannot analyze without a symbol. ' +
+      'Make sure Trading Copilot is active on a supported trading chart ' +
+      '(tradingview.com, binance.com, bybit.com, etc.) and the content script ' +
+      'has loaded successfully.'
+    );
+  }
 
-      // Try to get symbol/timeframe/platform from payload first
-      if (payload && payload.symbol) {
-        symbol = payload.symbol;
-      }
-      if (payload && payload.timeframe) {
-        timeframe = payload.timeframe;
-      }
-      if (payload && payload.platform) {
-        platform = payload.platform;
-      }
-
-      // If no platform from payload, try to extract from tab URL
-      if (!platform && tabId) {
-        try {
-          const tab: chrome.tabs.Tab = await new Promise<chrome.tabs.Tab>((resolve, reject) => {
-            chrome.tabs.get(tabId, (tab) => {
-              if (chrome.runtime.lastError) {
-                reject(new Error(chrome.runtime.lastError.message || 'Unknown error'));
-              } else {
-                resolve(tab);
-              }
-            });
-          });
-
-          if (typeof tab.url === 'string') {
-            const url = new URL(tab.url);
-            symbol = extractSymbolFromURL(url) || symbol;
-            timeframe = extractTimeframeFromURL(url) || timeframe;
-            // Detect platform from URL
-            const hostname = url.hostname.toLowerCase();
-            if (hostname.includes('tradingview.com')) platform = 'tradingview';
-          }
-        } catch (tabError) {
-          console.warn('[Background] Could not get tab info, using defaults:', tabError);
-        }
-      }
+  let symbol = payload.symbol;
+  let timeframe = payload.timeframe || '1D';
+  let platform = payload.platform || '';
 
       console.log('[Background] Analyzing:', { symbol, timeframe, platform });
 
@@ -400,23 +389,7 @@ async function handleAnalysisRequest(tabId: number | undefined, payload: any): P
 
     // Return the analysis result directly to the caller
     return analysis;
-  } catch (error: any) {
-    console.error('[Background] Analysis failed:', error);
-    // Notify content script of error (with proper callback to prevent context invalidated)
-    if (tabId) {
-      chrome.tabs.sendMessage(tabId, {
-        type: 'UPDATE_OVERLAY',
-        payload: { error: 'Analysis failed: ' + (error.message || String(error)) }
-      }, () => {
-        if (chrome.runtime.lastError) { /* tab closed or navigated — ignore */ }
-      });
-    }
-    // Notify popup of error (with callback)
-    chrome.runtime.sendMessage({ type: 'ANALYSIS_ERROR', error: error.message }, () => {
-      if (chrome.runtime.lastError) { /* popup closed — ignore */ }
-    });
-    throw error;
-  }
+    // NOTE: No try/catch here — errors propagate to handleMessage's outer try/catch
 }
 
 /**
@@ -828,18 +801,56 @@ async function initializeDefaultSettings(): Promise<void> {
   }
 }
 
-// Helper function to extract symbol from URL (simplified)
-function extractSymbolFromURL(url: URL): string {
-  // This would be implemented per-platform in the website-detector module
-  // For now, return a default
-  return 'BTC-USD';
-}
+/**
+ * GET_CHART_INFO handler — proxy to content script to get current symbol/timeframe/price.
+ * This function runs in the background service worker context (module scope).
+ */
+async function handleGetChartInfo(tabId: number | undefined, sendResponse: (response?: any) => void): Promise<void> {
+  if (!tabId) {
+    sendResponse({ error: 'No active tab', symbol: null, timeframe: null });
+    return;
+  }
+  try {
+    // Ask the content script for current chart info (it has DOM access)
+    const response = await new Promise<any>((resolve) => {
+      chrome.tabs.sendMessage(tabId, { type: 'GET_CHART_INFO' }, (result) => {
+        if (chrome.runtime.lastError) {
+          // Content script may not be loaded — try extracting from URL
+          resolve({ fromUrl: true });
+        } else {
+          resolve(result);
+        }
+      });
+    });
 
-// Helper function to extract timeframe from URL (simplified)
-function extractTimeframeFromURL(url: URL): string {
-  // This would be implemented per-platform in the website-detector module
-  // For now, return default
-  return '1D';
+    if (response && response.symbol && response.symbol !== 'UNKNOWN') {
+      sendResponse({ symbol: response.symbol, timeframe: response.timeframe, price: response.price });
+      return;
+    }
+
+    // Fallback: extract symbol from tab URL
+    try {
+      const tab = await new Promise<chrome.tabs.Tab>((resolve, reject) => {
+        chrome.tabs.get(tabId, (t) => {
+          if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+          else resolve(t);
+        });
+      });
+      if (tab.url) {
+        const path = new URL(tab.url).pathname;
+        // Try to extract symbol from TradingView URL: /chart/... or /symbols/SYMBOL/
+        const match = path.match(/\/symbol[s]?\/([A-Za-z0-9_:%-]+)/i);
+        if (match) {
+          sendResponse({ symbol: match[1].replace(/[/\-\s:]/g, '').toUpperCase(), timeframe: null, fromUrl: true });
+          return;
+        }
+      }
+    } catch { /* ignore */ }
+
+    sendResponse({ error: 'Could not determine chart info', symbol: null, timeframe: null });
+  } catch (error: any) {
+    sendResponse({ error: error.message, symbol: null, timeframe: null });
+  }
 }
 
 // Initialize the service worker when it starts

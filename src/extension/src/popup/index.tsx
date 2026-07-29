@@ -88,7 +88,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const auth = response as any;
 
       if (auth?.authenticated) {
+        // ── Bug 1 fix: Update status badge immediately on auth check ──
+        statusDot.className = 'status-dot online';
+        statusText.textContent = 'Connected';
+
         dashboard.classList.remove('section-hidden');
+
+        // ── Bug 1 fix: Fetch current chart info immediately ──
+        fetchChartInfo();
+
         await refreshDashboard();
       } else {
         loginPrompt.classList.remove('section-hidden');
@@ -105,6 +113,33 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCurrentAnalysis(result.lastAnalysisResult);
       }
     });
+  }
+
+  // ── Store current symbol/timeframe from chart info (Bug 2 fix) ──
+  let currentChartSymbol: string | null = null;
+  let currentChartTimeframe: string | null = null;
+
+  // ── Fetch current chart symbol/timeframe from TradingView ──
+  async function fetchChartInfo(): Promise<void> {
+    try {
+      const response = await sendMessage({ type: 'GET_CHART_INFO' });
+      if (response && response.symbol) {
+        // Store for fallback analysis (Bug 2 fix)
+        currentChartSymbol = response.symbol;
+        currentChartTimeframe = response.timeframe || null;
+        currentSymbol.textContent = response.symbol;
+        if (response.timeframe) {
+          currentTimeframe.textContent = response.timeframe;
+        }
+        if (response.price) {
+          currentPrice.textContent = formatPrice(response.price);
+        }
+        console.log('[Popup] Chart info fetched:', response.symbol, response.timeframe);
+      }
+    } catch (error) {
+      // Chart info is non-critical — user can still click Analyze
+      console.log('[Popup] Could not fetch chart info (content script may not be loaded):', error);
+    }
   }
 
   // ── Dashboard refresh ──
@@ -235,8 +270,18 @@ document.addEventListener('DOMContentLoaded', () => {
         if (tabs[0]?.id) {
           chrome.tabs.sendMessage(tabs[0].id, { type: 'REQUEST_ANALYSIS' }, (response) => {
             if (chrome.runtime.lastError) {
-              // Try via background as fallback
-              sendMessage({ type: 'REQUEST_ANALYSIS', payload: { force: true } })
+              // ── Bug 2 fix: Include current symbol in fallback payload ──
+              // NEVER hardcode BTC — use the symbol we fetched on popup open
+              const fallbackPayload: any = { force: true };
+              if (currentChartSymbol) {
+                fallbackPayload.symbol = currentChartSymbol;
+              }
+              if (currentChartTimeframe) {
+                fallbackPayload.timeframe = currentChartTimeframe;
+              }
+              fallbackPayload.platform = 'tradingview';
+
+              sendMessage({ type: 'REQUEST_ANALYSIS', payload: fallbackPayload })
                 .then((result: any) => {
                   if (result && (result as any).recommendation) {
                     updateCurrentAnalysis(result);
@@ -249,7 +294,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
           });
         } else {
-          sendMessage({ type: 'REQUEST_ANALYSIS', payload: { force: true } })
+          // ── Bug 2 fix: Include current symbol in fallback payload ──
+          const fallbackPayload: any = { force: true };
+          if (currentChartSymbol) {
+            fallbackPayload.symbol = currentChartSymbol;
+          }
+          if (currentChartTimeframe) {
+            fallbackPayload.timeframe = currentChartTimeframe;
+          }
+          fallbackPayload.platform = 'tradingview';
+
+          sendMessage({ type: 'REQUEST_ANALYSIS', payload: fallbackPayload })
             .then((result: any) => {
               if (result?.recommendation) updateCurrentAnalysis(result);
             })
@@ -343,8 +398,16 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if ((result as any)?.success) {
+        // ── Bug 1 fix: Update status badge immediately on login success ──
+        statusDot.className = 'status-dot online';
+        statusText.textContent = 'Connected';
+
         loginPrompt.classList.add('section-hidden');
         dashboard.classList.remove('section-hidden');
+
+        // ── Bug 1 fix: Fetch current chart info immediately ──
+        fetchChartInfo();
+
         await refreshDashboard();
       } else {
         showLoginError((result as any)?.error || 'Login failed');

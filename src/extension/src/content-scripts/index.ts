@@ -178,6 +178,30 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
         sendResponse({ success: true });
         break;
 
+      case 'GET_CHART_INFO':
+        // Return current chart symbol, timeframe, and price from DOM
+        try {
+          if (isTradingViewPage()) {
+            const domData = extractFromTradingViewDOM();
+            sendResponse({
+              symbol: domData.symbol !== 'UNKNOWN' ? domData.symbol : null,
+              timeframe: domData.timeframe,
+              price: domData.currentPrice,
+              platform: 'tradingview',
+            });
+          } else {
+            const platform = WebsiteDetector.detectPlatform();
+            sendResponse({
+              symbol: WebsiteDetector.getSymbol() || null,
+              timeframe: WebsiteDetector.getTimeframe() || null,
+              platform,
+            });
+          }
+        } catch (error) {
+          sendResponse({ error: String(error), symbol: null, timeframe: null });
+        }
+        break;
+
       case 'GET_STATUS':
         // Return current status
         sendResponse({
