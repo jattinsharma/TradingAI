@@ -332,63 +332,63 @@ async function handleAnalysisRequest(tabId: number | undefined, payload: any): P
   let timeframe = payload.timeframe || '1D';
   let platform = payload.platform || '';
 
-      console.log('[Background] Analyzing:', { symbol, timeframe, platform });
+  console.log('[Background] Analyzing:', { symbol, timeframe, platform });
 
-      // Validate that we're on a supported platform before analyzing
-      if (!platform || platform === 'generic') {
-        console.warn('[Background] Cannot analyze: unsupported platform', platform ? platform : 'unknown');
-        throw new Error('Cannot analyze: unsupported website. Trading Copilot only works on tradingview.com, binance.com, bybit.com, coinbase.com, zerodha.com, upstox.com, angelone.in, and groww.in.');
-      }
+  // Validate that we're on a supported platform before analyzing
+  if (!platform || platform === 'generic') {
+    console.warn('[Background] Cannot analyze: unsupported platform', platform ? platform : 'unknown');
+    throw new Error('Cannot analyze: unsupported website. Trading Copilot only works on tradingview.com, binance.com, bybit.com, coinbase.com, zerodha.com, upstox.com, angelone.in, and groww.in.');
+  }
 
-      console.log('[Background] Selected platform adapter:', platform);
+  console.log('[Background] Selected platform adapter:', platform);
 
-      // Perform analysis via background services
-      if (!analysisOrchestrator) {
-        throw new Error('Analysis orchestrator not initialized');
-      }
-      const analysis = await analysisOrchestrator.analyze(symbol, timeframe, platform);
+  // Perform analysis via background services
+  if (!analysisOrchestrator) {
+    throw new Error('Analysis orchestrator not initialized');
+  }
+  const analysis = await analysisOrchestrator.analyze(symbol, timeframe, platform);
 
-    console.log('[Background] Analysis result:', {
-      symbol: analysis.symbol,
-      recommendation: analysis.recommendation,
-      confidence: analysis.confidence
-    });
+  console.log('[Background] Analysis result:', {
+    symbol: analysis.symbol,
+    recommendation: analysis.recommendation,
+    confidence: analysis.confidence
+  });
 
-    // ── Auto-save analysis to backend ──
-    if (tradingCopilotApi.isAuthenticated()) {
-      autoSaveAnalysis(analysis).catch((err: any) =>
-        console.warn('[Background] Auto-save analysis failed (non-critical):', err)
-      );
-    }
+  // ── Auto-save analysis to backend ──
+  if (tradingCopilotApi.isAuthenticated()) {
+    autoSaveAnalysis(analysis).catch((err: any) =>
+      console.warn('[Background] Auto-save analysis failed (non-critical):', err)
+    );
+  }
 
-    // ── Notify content script of results (async, non-blocking) ──
-    // The primary response is sent back via sendResponse() to the originating message.
-    // These additional notifications are fire-and-forget with proper error callbacks.
-    if (tabId) {
-      chrome.tabs.sendMessage(tabId, {
-        type: 'UPDATE_OVERLAY',
-        payload: { analysisResult: analysis }
-      }, () => {
-        if (chrome.runtime.lastError) {
-          // Tab might have navigated or content script context invalidated — non-critical
-          console.warn('[Background] UPDATE_OVERLAY sendMessage error:', chrome.runtime.lastError.message);
-        }
-      });
-    }
-
-    // Also notify popup if open (fire-and-forget with callback to prevent unhandled errors)
-    chrome.runtime.sendMessage({
-      type: 'ANALYSIS_UPDATE',
-      data: analysis
+  // ── Notify content script of results (async, non-blocking) ──
+  // The primary response is sent back via sendResponse() to the originating message.
+  // These additional notifications are fire-and-forget with proper error callbacks.
+  if (tabId) {
+    chrome.tabs.sendMessage(tabId, {
+      type: 'UPDATE_OVERLAY',
+      payload: { analysisResult: analysis }
     }, () => {
       if (chrome.runtime.lastError) {
-        // Popup likely closed — ignore, this is expected
-        // LastError: "Could not establish connection. Receiving end does not exist."
+        // Tab might have navigated or content script context invalidated — non-critical
+        console.warn('[Background] UPDATE_OVERLAY sendMessage error:', chrome.runtime.lastError.message);
       }
     });
+  }
 
-    // Return the analysis result directly to the caller
-    return analysis;
+  // Also notify popup if open (fire-and-forget with callback to prevent unhandled errors)
+  chrome.runtime.sendMessage({
+    type: 'ANALYSIS_UPDATE',
+    data: analysis
+  }, () => {
+    if (chrome.runtime.lastError) {
+      // Popup likely closed — ignore, this is expected
+      // LastError: "Could not establish connection. Receiving end does not exist."
+    }
+  });
+
+  // Return the analysis result directly to the caller
+  return analysis;
     // NOTE: No try/catch here — errors propagate to handleMessage's outer try/catch
 }
 

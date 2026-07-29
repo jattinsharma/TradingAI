@@ -117,7 +117,17 @@ export class ChartOverlay {
         const reanalyzeBtn = container.querySelector('#ov-reanalyze-btn');
         if (reanalyzeBtn) {
           reanalyzeBtn.addEventListener('click', () => {
-            chrome.runtime.sendMessage({ type: 'REQUEST_ANALYSIS', payload: { force: true } });
+            // Read current symbol from the overlay DOM to include in payload
+            const ovSymbol = container.querySelector('#ov-symbol')?.textContent || '';
+            const ovTimeframe = container.querySelector('#ov-timeframe')?.textContent || '';
+            const payload: any = { force: true };
+            if (ovSymbol && ovSymbol !== '---') {
+              payload.symbol = ovSymbol;
+            }
+            if (ovTimeframe && ovTimeframe !== '---') {
+              payload.timeframe = ovTimeframe;
+            }
+            chrome.runtime.sendMessage({ type: 'REQUEST_ANALYSIS', payload });
             this.showLoading('Re-analyzing...');
           });
         }

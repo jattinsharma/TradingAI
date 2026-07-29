@@ -107,12 +107,10 @@ document.addEventListener('DOMContentLoaded', () => {
       loadingState.style.display = 'none';
     }
 
-    // Check if we have a cached analysis result
-    chrome.storage.local.get(['lastAnalysisResult'], (result) => {
-      if (result.lastAnalysisResult) {
-        updateCurrentAnalysis(result.lastAnalysisResult);
-      }
-    });
+    // NOTE: Do NOT load cached lastAnalysisResult from storage.
+    // The TradingView chart is the single source of truth.
+    // Stale data from a previous symbol should never be displayed.
+    // Only updateCurrentAnalysis() from a LIVE analysis request is valid.
   }
 
   // ── Store current symbol/timeframe from chart info (Bug 2 fix) ──
@@ -120,6 +118,8 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentChartTimeframe: string | null = null;
 
   // ── Fetch current chart symbol/timeframe from TradingView ──
+  // The TradingView chart is the SINGLE SOURCE OF TRUTH.
+  // Every UI element must reflect the currently open chart.
   async function fetchChartInfo(): Promise<void> {
     try {
       const response = await sendMessage({ type: 'GET_CHART_INFO' });
@@ -134,11 +134,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (response.price) {
           currentPrice.textContent = formatPrice(response.price);
         }
+
+        // Clear stale analysis from popup if this is a different symbol
+        if (currentAnalysisResult && currentAnalysisResult.symbol !== response.symbol) {
+          console.log('[Popup] Symbol changed from', currentAnalysisResult.symbol, 'to', response.symbol, '— clearing stale analysis');
+          clearCurrentAnalysis();
+        }
+
+        // Update analyze button with current symbol
+        updateAnalyzeButton(currentChartSymbol, currentChartTimeframe);
+
         console.log('[Popup] Chart info fetched:', response.symbol, response.timeframe);
+      } else {
+        // Chart could not be detected — show clear message instead of falling back
+        console.log('[Popup] No chart info returned from content script');
+        currentSymbol.textContent = '🚫 Chart not detected';
+        currentTimeframe.textContent = '---';
+        currentChartSymbol = null;
+        currentChartTimeframe = null;
+        updateAnalyzeButton(null, null);
       }
     } catch (error) {
-      // Chart info is non-critical — user can still click Analyze
+      // Chart info fetch failed — content script may not be loaded
       console.log('[Popup] Could not fetch chart info (content script may not be loaded):', error);
+      currentSymbol.textContent = '🚫 Chart not detected';
+      currentTimeframe.textContent = '---';
+      currentChartSymbol = null;
+      currentChartTimeframe = null;
+      updateAnalyzeButton(null, null);
     }
   }
 
@@ -317,11 +340,45 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  /**
+   * Update the analyze button text to show the current chart symbol and timeframe.
+   * If chart is not detected, show a clear message.
+   */
+  function updateAnalyzeButton(symbol: string | null, timeframe: string | null): void {
+    if (symbol && timeframe) {
+      analyzeBtn.textContent = `⚡ Analyze ${symbol} (${timeframe})`;
+    } else if (symbol) {
+      analyzeBtn.textContent = `⚡ Analyze ${symbol}`;
+    } else {
+      analyzeBtn.textContent = '🚫 Unable to detect chart';
+      analyzeBtn.title = 'Open a supported trading chart (TradingView, Binance, etc.)';
+    }
+  }
+
+  /**
+   * Clear all analysis display elements back to their default state.
+   * Called when symbol changes or when a fresh popup opens.
+   */
+  function clearCurrentAnalysis(): void {
+    currentAnalysisResult = null;
+    currentRecommendation = 'HOLD';
+    currentConfidence = 0;
+    currentRec.textContent = 'HOLD';
+    currentRec.className = 'recommendation-badge hold';
+    currentConf.textContent = '0%';
+    (confidenceFill as HTMLElement).style.width = '0%';
+    (confidenceFill as HTMLElement).className = 'confidence-fill hold';
+    tradeSetupContainer.classList.add('section-hidden');
+    reasoningText.textContent = 'No analysis yet. Click the button above to start.';
+  }
+
   function resetAnalyzeBtn(): void {
     (analyzeBtn as HTMLButtonElement).disabled = false;
-    analyzeBtn.textContent = '⚡ Analyze Market';
     statusDot.className = 'status-dot online';
     statusText.textContent = 'Connected';
+
+    // Restore button to show current chart info
+    updateAnalyzeButton(currentChartSymbol, currentChartTimeframe);
   }
 
   // ── Password Requirements (live validation) ──
