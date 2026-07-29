@@ -3,6 +3,8 @@
  * Displays current analysis, history, watchlist, stats, and one-click analyze.
  */
 
+import { parseApiError, getPasswordRequirements, isPasswordValid, PasswordRequirement } from '../api/error-parser';
+
 let currentRecommendation: string = 'HOLD';
 let currentConfidence: number = 0;
 let currentAnalysisResult: any = null;
@@ -267,14 +269,66 @@ document.addEventListener('DOMContentLoaded', () => {
     statusText.textContent = 'Connected';
   }
 
+  // ── Password Requirements (live validation) ──
+  const passwordInput = loginPassword;
+  const pwReqContainer = document.getElementById('password-requirements')!;
+  const pwReqLength = document.getElementById('pw-req-length')!;
+  const pwReqUpper = document.getElementById('pw-req-upper')!;
+  const pwReqLower = document.getElementById('pw-req-lower')!;
+  const pwReqNumber = document.getElementById('pw-req-number')!;
+
+  let pwValidationTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function updatePasswordRequirements(password: string): void {
+    const reqs = getPasswordRequirements(password);
+    const elements = [pwReqLength, pwReqUpper, pwReqLower, pwReqNumber];
+    reqs.forEach((req, i) => {
+      elements[i].textContent = (req.met ? '✓' : '✗') + ' ' + req.label;
+      elements[i].className = 'pw-req' + (req.met ? ' met' : '');
+    });
+  }
+
+  passwordInput.addEventListener('focus', () => {
+    if (passwordInput.value.length > 0) {
+      pwReqContainer.style.display = 'block';
+      updatePasswordRequirements(passwordInput.value);
+    }
+  });
+
+  passwordInput.addEventListener('blur', () => {
+    // Keep visible if there's a value
+    if (!passwordInput.value) {
+      pwReqContainer.style.display = 'none';
+    }
+  });
+
+  passwordInput.addEventListener('input', () => {
+    const password = passwordInput.value;
+    if (password.length > 0) {
+      pwReqContainer.style.display = 'block';
+      // Debounce live validation
+      if (pwValidationTimer) clearTimeout(pwValidationTimer);
+      pwValidationTimer = setTimeout(() => {
+        updatePasswordRequirements(password);
+      }, 100);
+    } else {
+      pwReqContainer.style.display = 'none';
+    }
+  });
+
   // ── Login ──
+  function showLoginError(error: unknown): void {
+    const parsed = parseApiError(error);
+    loginError.textContent = parsed.message;
+    loginError.style.display = 'block';
+  }
+
   loginBtn.addEventListener('click', async () => {
     const email = loginEmail.value.trim();
     const password = loginPassword.value.trim();
 
     if (!email || !password) {
-      loginError.textContent = 'Email and password required';
-      loginError.style.display = 'block';
+      showLoginError({ message: 'Email and password are required.', isKnown: true });
       return;
     }
 
@@ -293,12 +347,10 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboard.classList.remove('section-hidden');
         await refreshDashboard();
       } else {
-        loginError.textContent = (result as any)?.error || 'Login failed';
-        loginError.style.display = 'block';
+        showLoginError((result as any)?.error || 'Login failed');
       }
     } catch (error: any) {
-      loginError.textContent = error.message || 'Connection failed';
-      loginError.style.display = 'block';
+      showLoginError(error);
     } finally {
       (loginBtn as HTMLButtonElement).disabled = false;
       loginBtn.textContent = 'Login / Register';

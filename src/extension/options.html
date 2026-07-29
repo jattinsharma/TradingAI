@@ -174,14 +174,23 @@
                     <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">
                         Production: https://tradingai-4dq2.onrender.com
                     </p>
-                </div>
-                <div class="form-row">
-                    <div class="form-group"><label>Email</label><input id="be-email" type="email" /></div>
-                    <div class="form-group"><label>Password</label><input id="be-password" type="password" /></div>
+                </div>                    <div class="form-row">
+                    <div class="form-group"><label>Email</label><input id="be-email" type="email" autocomplete="email" /></div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input id="be-password" type="password" autocomplete="new-password" />
+                        <div id="be-password-requirements" style="display:none;margin-top:6px;padding:8px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:11px;line-height:1.7;">
+                            <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px;">Password must contain:</div>
+                            <div id="be-pw-req-length" class="pw-req">✗ At least 8 characters</div>
+                            <div id="be-pw-req-upper" class="pw-req">✗ One uppercase letter</div>
+                            <div id="be-pw-req-lower" class="pw-req">✗ One lowercase letter</div>
+                            <div id="be-pw-req-number" class="pw-req">✗ One number</div>
+                        </div>
+                    </div>
                 </div>
                 <button class="btn btn-primary" id="be-connect-btn">Connect</button>
                 <button class="btn btn-danger" id="be-disconnect-btn" style="margin-left:8px;">Disconnect</button>
-                <span id="be-status" style="font-size:12px;color:var(--text-muted);margin-left:12px;"></span>
+                <div id="be-status" style="font-size:12px;color:var(--text-muted);margin-top:8px;"></div>
             </div>
         </div>
 
@@ -225,13 +234,67 @@
             });
         }
 
+        // ── Import error parser (inlined for options.html) ──
+        function parseError(err) {
+            if (!err || typeof err === 'string') return { message: err || 'An unexpected error occurred.', isKnown: false };
+            if (typeof err.message === 'string') {
+                if (err.message === 'Unauthorized' || err.message === 'Invalid email or password') return { message: 'Invalid email or password.', isKnown: true };
+                if (err.message.includes('already exists') || err.message.includes('already registered')) return { message: 'This email is already registered. Try logging in instead.', isKnown: true };
+                return { message: err.message, isKnown: true };
+            }
+            if (Array.isArray(err.message) && err.message.length > 0) return { message: err.message[0], isKnown: true };
+            if (err instanceof TypeError && err.message === 'Failed to fetch') return { message: 'Cannot connect to the backend. Check your internet connection.', isKnown: true };
+            return { message: 'An unexpected error occurred.', isKnown: false };
+        }
+
+        function getPwReqs(pw) {
+            return [
+                { label: 'At least 8 characters', met: pw.length >= 8 },
+                { label: 'One uppercase letter', met: /[A-Z]/.test(pw) },
+                { label: 'One lowercase letter', met: /[a-z]/.test(pw) },
+                { label: 'One number', met: /\d/.test(pw) },
+            ];
+        }
+
+        function updatePwReqs(password) {
+            const reqs = getPwReqs(password);
+            const ids = ['be-pw-req-length', 'be-pw-req-upper', 'be-pw-req-lower', 'be-pw-req-number'];
+            reqs.forEach((req, i) => {
+                const el = document.getElementById(ids[i]);
+                if (el) {
+                    el.textContent = (req.met ? '\u2713' : '\u2717') + ' ' + req.label;
+                    el.className = 'pw-req' + (req.met ? ' met' : '');
+                }
+            });
+        }
+
         // ── Backend Connection ──
         const beConnectBtn = document.getElementById('be-connect-btn');
         const beDisconnectBtn = document.getElementById('be-disconnect-btn');
         const beStatus = document.getElementById('be-status');
         const beEmail = document.getElementById('be-email');
         const bePassword = document.getElementById('be-password');
+        const bePwReqs = document.getElementById('be-password-requirements');
         const backendUrl = document.getElementById('backend-url');
+
+        // Password live validation
+        bePassword.addEventListener('focus', function() {
+            if (this.value.length > 0) { bePwReqs.style.display = 'block'; updatePwReqs(this.value); }
+        });
+        bePassword.addEventListener('blur', function() {
+            if (!this.value) bePwReqs.style.display = 'none';
+        });
+        bePassword.addEventListener('input', function() {
+            if (this.value.length > 0) { bePwReqs.style.display = 'block'; updatePwReqs(this.value); }
+            else { bePwReqs.style.display = 'none'; }
+        });
+
+        // Function to show user-friendly errors
+        function showConnectError(err) {
+            const parsed = parseError(err);
+            beStatus.textContent = parsed.message;
+            beStatus.style.color = 'var(--accent-red)';
+        }
 
         // Load saved backend URL from storage
         async function loadBackendUrl() {
@@ -284,24 +347,23 @@
         beConnectBtn.addEventListener('click', async () => {
             const email = beEmail.value.trim();
             const password = bePassword.value.trim();
-            if (!email || !password) { beStatus.textContent = 'Email and password required'; return; }
+            if (!email || !password) { showConnectError('Email and password are required.'); return; }
             beConnectBtn.disabled = true;
             beConnectBtn.textContent = 'Connecting...';
+            beStatus.style.display = 'none';
             try {
-                // Save the current URL before connecting
                 await saveCurrentUrl();
 
                 const result = await sendMsg({ type: 'BACKEND_LOGIN', payload: { email, password } });
                 if (result?.success) {
                     beStatus.textContent = 'Connected!';
                     beStatus.style.color = 'var(--accent-green)';
+                    beStatus.style.display = 'block';
                 } else {
-                    beStatus.textContent = result?.error || 'Connection failed';
-                    beStatus.style.color = 'var(--accent-red)';
+                    showConnectError(result?.error || 'Login failed');
                 }
             } catch (err) {
-                beStatus.textContent = err.message;
-                beStatus.style.color = 'var(--accent-red)';
+                showConnectError(err);
             } finally {
                 beConnectBtn.disabled = false;
                 beConnectBtn.textContent = 'Connect';
@@ -312,6 +374,7 @@
             await sendMsg({ type: 'BACKEND_LOGOUT' });
             beStatus.textContent = 'Disconnected';
             beStatus.style.color = 'var(--text-muted)';
+            beStatus.style.display = 'block';
         });
 
         // ── Trade Journal ──

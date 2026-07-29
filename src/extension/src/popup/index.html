@@ -329,6 +329,16 @@
 
         /* ── Section Toggle ── */
         .section-hidden { display: none; }
+
+        /* ── Password Requirements ── */
+        .pw-req {
+            font-size: 10px;
+            color: var(--accent-red);
+            transition: color 0.2s ease;
+        }
+        .pw-req.met {
+            color: var(--accent-green);
+        }
     </style>
 </head>
 <body>
@@ -363,10 +373,19 @@
                         Login to save analyses, track accuracy, and maintain your trading journal.
                     </p>
                     <div id="login-form" style="display:flex;flex-direction:column;gap:8px;max-width:280px;margin:0 auto;">
-                        <input id="login-email" type="email" placeholder="Email" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;" />
-                        <input id="login-password" type="password" placeholder="Password" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;" />
+                        <input id="login-email" type="email" placeholder="Email" autocomplete="email" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;" />
+                        <div style="position:relative;">
+                            <input id="login-password" type="password" placeholder="Password" autocomplete="new-password" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;width:100%;" />
+                            <div id="password-requirements" style="display:none;margin-top:6px;padding:8px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:10px;line-height:1.6;">
+                                <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Password must contain:</div>
+                                <div id="pw-req-length" class="pw-req">✗ At least 8 characters</div>
+                                <div id="pw-req-upper" class="pw-req">✗ One uppercase letter</div>
+                                <div id="pw-req-lower" class="pw-req">✗ One lowercase letter</div>
+                                <div id="pw-req-number" class="pw-req">✗ One number</div>
+                            </div>
+                        </div>
                         <button id="login-btn" class="btn btn-primary" style="width:100%;">Login / Register</button>
-                        <div id="login-error" style="color:var(--accent-red);font-size:11px;display:none;"></div>
+                        <div id="login-error" style="color:var(--accent-red);font-size:11px;display:none;text-align:left;padding:4px 0;"></div>
                     </div>
                 </div>
             </div>
