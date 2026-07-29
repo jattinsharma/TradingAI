@@ -8,6 +8,20 @@ import { AnalysisOrchestrator } from '../analysis/analysis-orchestrator';
 import { tradingCopilotApi } from '../api/trading-copilot-api';
 import { getBackendUrl, saveBackendUrl, setBackendUrl as setCachedBackendUrl } from '../api/config';
 
+// ── Chart State Cache ──
+// The latest ChartState per tab ID, updated by content script via CHART_STATE_UPDATED
+import {
+  ChartState,
+  CHART_STATE_MESSAGES,
+  createSuccessfulChartState,
+  createFailedChartState,
+  type ChartDetectionFailure,
+} from '../modules/chart-state/chart-state.types';
+
+const MAX_CHART_STATE_AGE_MS = 2000; // 2 second freshness threshold
+const CHART_REFRESH_TIMEOUT_MS = 3000; // 3 second timeout for content script refresh
+const chartStateCache = new Map<number, ChartState>();
+
 // Initialize managers
 let storage: StorageManager | null = null;
 let alarmManager: AlarmManager | null = null;
@@ -269,6 +283,18 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       case 'GET_SETTINGS':
         await handleGetSettings(sendResponse);
         return;
+      case 'CHART_STATE_UPDATED':
+        // Content script published updated chart state — cache it by tab ID
+        if (sender.tab?.id && message.payload) {
+          const state = message.payload as ChartState;
+          state.cachedAt = Date.now();
+          chartStateCache.set(sender.tab.id, state);
+          console.log('[Background] ChartState cached for tab', sender.tab.id, ':',
+            state.isDetected ? `${state.symbol} ${state.timeframe}` : 'no chart');
+        }
+        sendResponse({ success: true });
+        break;
+
       case 'CONNECT_WALLET':
         await handleWalletConnection(message.payload, sendResponse);
         return;
@@ -290,21 +316,29 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       case 'ANALYSIS_FETCH_REQUEST':
         await handleAnalysisFetch(message.payload, sendResponse);
         return;
+      case 'GET_CHART_STATE':
       case 'GET_CHART_INFO':
-        // Popup asks for current chart data — proxy to content script
-        // When popup sends via chrome.runtime.sendMessage, sender.tab is undefined
-        // so we resolve the active tab ourselves as fallback.
-        const chartInfoTabId = sender.tab?.id;
-        if (chartInfoTabId) {
-          handleGetChartInfo(chartInfoTabId, sendResponse);
+        // Centralized chart state request with freshness check.
+        // Returns cached state if < 2s old; otherwise requests a refresh from content script.
+        const tabId = sender.tab?.id;
+        if (tabId) {
+          handleGetChartState(tabId, sendResponse);
         } else {
-          // Popup sender has no tab context — query active tab
           chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             const activeTabId = tabs[0]?.id;
             if (activeTabId) {
-              handleGetChartInfo(activeTabId, sendResponse);
+              handleGetChartState(activeTabId, sendResponse);
             } else {
-              sendResponse({ error: 'No active tab found', symbol: null, timeframe: null });
+              sendResponse({
+                symbol: null,
+                timeframe: null,
+                price: null,
+                platform: null,
+                isDetected: false,
+                failureReason: 'CONTENT_SCRIPT_MISSING',
+                failureSuggestion: 'No active tab found. Open a trading chart first.',
+                status: 'No active tab',
+              });
             }
           });
         }
@@ -813,56 +847,152 @@ async function initializeDefaultSettings(): Promise<void> {
 }
 
 /**
- * GET_CHART_INFO handler — proxy to content script to get current symbol/timeframe/price.
- * This function runs in the background service worker context (module scope).
+ * GET_CHART_STATE handler — returns cached ChartState with freshness check.
+ *
+ * Freshness policy:
+ * - If cached state is < 2 seconds old, return immediately.
+ * - If cached state is ≥ 2 seconds old, forward REQUEST_CHART_REFRESH to content script.
+ *   Wait up to 3 seconds for response; if timeout, return stale cached state if available,
+ *   otherwise return a failure state with detailed error.
  */
-async function handleGetChartInfo(tabId: number | undefined, sendResponse: (response?: any) => void): Promise<void> {
-  if (!tabId) {
-    sendResponse({ error: 'No active tab', symbol: null, timeframe: null });
+async function handleGetChartState(tabId: number, sendResponse: (response?: any) => void): Promise<void> {
+  const now = Date.now();
+  const cached = chartStateCache.get(tabId);
+
+  // Case 1: Fresh cache (< 2s old)
+  if (cached && cached.cachedAt && (now - cached.cachedAt) < MAX_CHART_STATE_AGE_MS) {
+    console.log('[Background] ChartState cache FRESH (< 2s), returning cached:',
+      cached.isDetected ? `${cached.symbol} ${cached.timeframe}` : 'no chart');
+    sendResponse(chartStateToDisplay(cached, tabId));
     return;
   }
+
+  // Case 2: Stale cache or no cache — request refresh from content script
+  console.log('[Background] ChartState cache STALE or MISSING, requesting refresh from tab', tabId);
+
   try {
-    // Ask the content script for current chart info (it has DOM access)
     const response = await new Promise<any>((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({ timeout: true });
+      }, CHART_REFRESH_TIMEOUT_MS);
+
       chrome.tabs.sendMessage(tabId, { type: 'GET_CHART_INFO' }, (result) => {
+        clearTimeout(timeout);
         if (chrome.runtime.lastError) {
-          // Content script may not be loaded — try extracting from URL
-          resolve({ fromUrl: true });
+          resolve({ messagingError: chrome.runtime.lastError.message });
         } else {
           resolve(result);
         }
       });
     });
 
-    if (response && response.symbol && response.symbol !== 'UNKNOWN') {
-      sendResponse({ symbol: response.symbol, timeframe: response.timeframe, price: response.price });
+    if (response?.symbol && response.symbol !== 'UNKNOWN') {
+      // Content script responded with valid chart data
+      const state = createSuccessfulChartState(
+        response.symbol,
+        response.timeframe || '1D',
+        null,
+        response.price || null,
+        response.platform || 'tradingview',
+      );
+      state.cachedAt = Date.now();
+      chartStateCache.set(tabId, state);
+      sendResponse(chartStateToDisplay(state, tabId));
       return;
     }
 
-    // Fallback: extract symbol from tab URL
-    try {
-      const tab = await new Promise<chrome.tabs.Tab>((resolve, reject) => {
-        chrome.tabs.get(tabId, (t) => {
-          if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
-          else resolve(t);
+    if (response?.timeout) {
+      // Timeout — content script didn't respond
+      if (cached) {
+        // Return stale cached state with timeout warning
+        const staleState = { ...cached, status: 'Using cached data (content script did not respond)' };
+        sendResponse(chartStateToDisplay(staleState, tabId));
+      } else {
+        sendResponse({
+          symbol: null, timeframe: null, price: null, platform: null,
+          isDetected: false,
+          failureReason: 'CONTENT_SCRIPT_TIMEOUT',
+          failureSuggestion: 'The content script did not respond within the time limit. Try refreshing the page.',
+          status: 'Content script timeout',
+          extractedAt: now,
         });
-      });
-      if (tab.url) {
-        const path = new URL(tab.url).pathname;
-        // Try to extract symbol from TradingView URL: /chart/... or /symbols/SYMBOL/
-        const match = path.match(/\/symbol[s]?\/([A-Za-z0-9_:%-]+)/i);
-        if (match) {
-          sendResponse({ symbol: match[1].replace(/[/\-\s:]/g, '').toUpperCase(), timeframe: null, fromUrl: true });
-          return;
-        }
       }
-    } catch { /* ignore */ }
+      return;
+    }
 
-    sendResponse({ error: 'Could not determine chart info', symbol: null, timeframe: null });
+    if (response?.messagingError) {
+      console.warn('[Background] Content script messaging error:', response.messagingError);
+      if (cached) {
+        const staleState = { ...cached, status: 'Using cached data (messaging error: ' + response.messagingError + ')' };
+        sendResponse(chartStateToDisplay(staleState, tabId));
+      } else {
+        sendResponse({
+          symbol: null, timeframe: null, price: null, platform: null,
+          isDetected: false,
+          failureReason: 'CONTENT_SCRIPT_MISSING',
+          failureSuggestion: 'Trading Copilot content script is not loaded. Try refreshing the page.',
+          status: 'Content script unavailable',
+          extractedAt: now,
+        });
+      }
+      return;
+    }
+
+    // Content script responded but chart not detected — pass through failure details
+    if (response && !response.isDetected && response.failureReason) {
+      const failureState = createFailedChartState(response.failureReason);
+      failureState.failureSuggestion = response.failureSuggestion || failureState.failureSuggestion;
+      failureState.status = response.status || failureState.status;
+      failureState.cachedAt = Date.now();
+      chartStateCache.set(tabId, failureState);
+      sendResponse(chartStateToDisplay(failureState, tabId));
+      return;
+    }
+
+    // Unknown response format
+    sendResponse({
+      symbol: null, timeframe: null, price: null, platform: null,
+      isDetected: false,
+      failureReason: 'UNKNOWN_ERROR',
+      failureSuggestion: 'Unexpected response from content script. Try refreshing the page.',
+      status: 'Unknown error',
+      extractedAt: now,
+    });
   } catch (error: any) {
-    sendResponse({ error: error.message, symbol: null, timeframe: null });
+    console.error('[Background] handleGetChartState error:', error);
+    sendResponse({
+      symbol: null, timeframe: null, price: null, platform: null,
+      isDetected: false,
+      failureReason: 'MESSAGING_ERROR',
+      failureSuggestion: 'An error occurred while reading the chart. Try refreshing the page.',
+      status: error.message || 'Messaging error',
+      extractedAt: Date.now(),
+    });
   }
 }
+
+/**
+ * Convert a ChartState to the display format expected by the popup.
+ * Also handles the backward-compatible 'GET_CHART_INFO' response shape.
+ */
+function chartStateToDisplay(state: ChartState, tabId?: number): Record<string, unknown> {
+  return {
+    symbol: state.symbol,
+    timeframe: state.timeframe,
+    price: state.currentPrice,
+    platform: state.platform,
+    isDetected: state.isDetected,
+    failureReason: state.failureReason,
+    failureSuggestion: state.failureSuggestion,
+    status: state.status,
+    extractedAt: state.extractedAt,
+    cachedAt: state.cachedAt,
+    tabId,
+  };
+}
+
+// createSuccessfulChartState and createFailedChartState are imported
+// from '../modules/chart-state/chart-state.types'
 
 // Initialize the service worker when it starts
 initialize().then(success => {

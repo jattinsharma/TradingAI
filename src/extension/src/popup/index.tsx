@@ -146,30 +146,42 @@ document.addEventListener('DOMContentLoaded', () => {
     clockInterval = window.setInterval(tick, 1000);
   }
 
-  // ── Fetch Chart Info ──
+  // ── Fetch Chart State (uses cached state from background, never reads DOM) ──
   async function fetchChartInfo(): Promise<void> {
     try {
-      const response = await sendMessage({ type: 'GET_CHART_INFO' });
-      if (response && response.symbol) {
+      const response = await sendMessage({ type: 'GET_CHART_STATE' });
+
+      if (response && response.isDetected && response.symbol) {
         currentChartSymbol = response.symbol;
         currentChartTimeframe = response.timeframe || null;
         symTicker.textContent = response.symbol;
+        symTicker.classList.remove('dim');
         if (response.timeframe) symTf.textContent = response.timeframe;
         if (response.price) symPrice.textContent = formatPrice(response.price);
+        symPrice.classList.remove('dim');
 
         if (currentAnalysisResult && currentAnalysisResult.symbol !== response.symbol) {
           clearCurrentAnalysis();
         }
         updateAnalyzeButton(currentChartSymbol, currentChartTimeframe);
+        // Set exchange/platform info without overwriting connection status dot
+        if (response.platform) {
+          symExch.textContent = response.platform.toUpperCase();
+        }
+      } else if (response && !response.isDetected) {
+        // Show detailed failure message instead of generic 'No chart detected'
+        const failureMsg = response.failureSuggestion || response.status || 'Chart not detected';
+        const reason = response.failureReason || 'UNKNOWN';
+        setNoChart(reason, failureMsg);
       } else {
-        setNoChart();
+        setNoChart('CONTENT_SCRIPT_MISSING', 'Content script not available. Try refreshing the page.');
       }
     } catch {
-      setNoChart();
+      setNoChart('MESSAGING_ERROR', 'Could not communicate with the extension. Try reloading.');
     }
   }
 
-  function setNoChart(): void {
+  function setNoChart(reason?: string, suggestion?: string): void {
     symTicker.textContent = '---';
     symTicker.classList.add('dim');
     symTf.textContent = '---';
@@ -177,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
     symPrice.classList.add('dim');
     currentChartSymbol = null;
     currentChartTimeframe = null;
-    updateAnalyzeButton(null, null);
+    updateAnalyzeButton(null, null, reason, suggestion);
   }
 
   // ── Dashboard Refresh ──
@@ -278,7 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ── Analyze Button ──
-  function updateAnalyzeButton(symbol: string | null, timeframe: string | null): void {
+  function updateAnalyzeButton(symbol: string | null, timeframe: string | null, failureReason?: string, failureSuggestion?: string): void {
     if (symbol && timeframe) {
       analyzeBtn.textContent = `⚡ ANALYZE ${symbol} (${timeframe})`;
       analyzeBtn.className = 'analyze-btn ready';
@@ -290,7 +302,11 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       analyzeBtn.textContent = '⚠ NO CHART DETECTED';
       analyzeBtn.className = 'analyze-btn error';
-      analyzeBtn.title = 'Open a supported trading chart first';
+      // Show detailed failure reason as tooltip
+      analyzeBtn.title = failureSuggestion || 'Open a supported trading chart first';
+      if (failureReason) {
+        console.log('[Popup] Chart detection failed:', failureReason, '-', failureSuggestion);
+      }
     }
   }
 
