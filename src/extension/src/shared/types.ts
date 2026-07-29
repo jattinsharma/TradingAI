@@ -1,4 +1,83 @@
-// Shared types for the extension
+// ── Shared Types ──
+// These types are used by the popup, overlay, background, and orchestrator.
+
+export interface EngineResult {
+  signal: string;
+  strength: number;
+}
+
+export interface EngineTechnicalResult extends EngineResult {
+  indicators: Record<string, number>;
+}
+
+export interface EnginePatternResult extends EngineResult {
+  pattern: string;
+  confidence: number;
+}
+
+export interface EngineSupportResistanceResult extends EngineResult {
+  levels: {
+    resistance1: number;
+    resistance2: number;
+    support1: number;
+    support2: number;
+    currentPrice: number;
+  };
+}
+
+export interface EngineNewsResult extends EngineResult {
+  articles: unknown[];
+  sentiment: number;
+}
+
+export interface EngineRiskResult extends EngineResult {
+  riskLevel: string;
+  riskScore: number;
+  metrics: {
+    volatility: number;
+    maxDrawdown: number;
+    sharpeRatio: number;
+    valueAtRisk95: number;
+    beta: number;
+    correlationToMarket: number;
+  };
+}
+
+export interface EngineTradePlanningResult extends EngineResult {
+  confidence: number;
+  tradeSetup: {
+    entryPrice: number;
+    stopLoss: number;
+    takeProfit: number;
+    riskRewardRatio: number;
+    positionSizeSuggestion: number;
+    maxHoldTime: string;
+  } | null;
+  reasoning: string;
+}
+
+export interface EngineAIExplanationResult extends EngineResult {
+  explanation: string;
+  confidence: number;
+  keyFactors: string[];
+  risks: string[];
+  timeframeSuitability: string;
+}
+
+export interface AnalysisEngines {
+  technical: EngineTechnicalResult;
+  pattern: EnginePatternResult;
+  trend: EngineResult;
+  supportResistance: EngineSupportResistanceResult;
+  volume: EngineResult;
+  momentum: EngineResult;
+  news: EngineNewsResult;
+  sentiment: EngineResult;
+  risk: EngineRiskResult;
+  portfolio: EngineResult;
+  tradePlanning: EngineTradePlanningResult;
+  aiExplanation: EngineAIExplanationResult;
+}
 
 export interface AnalysisResult {
   symbol: string;
@@ -20,26 +99,7 @@ export interface AnalysisResult {
   takeProfit?: number;
   riskRewardRatio?: number;
   // Legacy engines object — populated by AnalysisOrchestrator for backward compatibility
-  engines: {
-    technical: any;
-    pattern: any;
-    trend: any;
-    supportResistance: any;
-    volume: any;
-    momentum: any;
-    news: any;
-    sentiment: any;
-    risk: any;
-    portfolio: any;
-    tradePlanning: any;
-    aiExplanation: any;
-  };
-}
-
-export interface EngineResult {
-  signal: string;
-  strength: number; // 0-1
-  [key: string]: any;
+  engines: AnalysisEngines;
 }
 
 export interface PlatformCapabilities {
@@ -61,9 +121,9 @@ export interface ChartData {
   // Additional chart-specific data can be added here
 }
 
-export interface ExtensionMessage {
+export interface ExtensionMessage<T = unknown> {
   type: string;
-  payload?: any;
+  payload?: T;
 }
 
 // ── Market Data Types ──

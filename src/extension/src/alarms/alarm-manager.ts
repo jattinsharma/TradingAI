@@ -1,14 +1,26 @@
-// Alarm manager for scheduling periodic tasks
+/**
+ * Alarm manager for scheduling periodic tasks.
+ * Uses chrome.alarms API with proper typing from chrome-alarms.d.ts.
+ */
 export class AlarmManager {
-  constructor() {}
+  private listenerId: number = 0;
+  private listeners: Map<number, (alarm: chrome.alarms.Alarm) => void> = new Map();
 
-  // Create a repeating alarm
+  constructor() {
+    // Register the single chrome.alarms.onAlarm listener that dispatches to registered callbacks
+    chrome.alarms.onAlarm.addListener((alarm: chrome.alarms.Alarm) => {
+      this.listeners.forEach((callback) => {
+        callback(alarm);
+      });
+    });
+  }
+
+  /** Create a repeating alarm. */
   createAlarm(name: string, periodInMinutes: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      // @ts-ignore: Ignore type checking for chrome.alarms.create
-      (chrome.alarms.create as any)(name, { periodInMinutes: periodInMinutes }, () => {
+      chrome.alarms.create(name, { periodInMinutes }, () => {
         if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
         } else {
           resolve();
         }
@@ -16,13 +28,12 @@ export class AlarmManager {
     });
   }
 
-  // Create a one-time alarm
+  /** Create a one-time alarm. */
   createOneTimeAlarm(name: string, delayInMinutes: number): Promise<void> {
     return new Promise((resolve, reject) => {
-      // @ts-ignore: Ignore type checking for chrome.alarms.create
-      (chrome.alarms.create as any)(name, { delayInMinutes: delayInMinutes }, () => {
+      chrome.alarms.create(name, { delayInMinutes }, () => {
         if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
         } else {
           resolve();
         }
@@ -30,13 +41,12 @@ export class AlarmManager {
     });
   }
 
-  // Clear an alarm
+  /** Clear a specific alarm. */
   clearAlarm(name: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // @ts-ignore: Ignore type checking for chrome.alarms.clear
-      (chrome.alarms.clear as any)(name, () => {
+      chrome.alarms.clear(name, () => {
         if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
         } else {
           resolve();
         }
@@ -44,13 +54,12 @@ export class AlarmManager {
     });
   }
 
-  // Clear all alarms
+  /** Clear all alarms. */
   clearAll(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // @ts-ignore: Ignore type checking for chrome.alarms.clearAll
-      (chrome.alarms.clearAll as any)(() => {
+      chrome.alarms.clearAll(() => {
         if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
         } else {
           resolve();
         }
@@ -58,27 +67,25 @@ export class AlarmManager {
     });
   }
 
-  // Get all alarms
-  getAll(): Promise<any[]> {
+  /** Get all registered alarms. */
+  getAll(): Promise<chrome.alarms.Alarm[]> {
     return new Promise((resolve, reject) => {
-      // @ts-ignore: Ignore type checking for chrome.alarms.getAll
-      (chrome.alarms.getAll as any)((alarms) => {
+      chrome.alarms.getAll((alarms) => {
         if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
         } else {
-          resolve(alarms);
+          resolve(alarms || []);
         }
       });
     });
   }
 
-  // Get a specific alarm
-  get(name: string): Promise<any | null> {
+  /** Get a specific alarm by name. */
+  get(name: string): Promise<chrome.alarms.Alarm | null> {
     return new Promise((resolve, reject) => {
-      // @ts-ignore: Ignore type checking for chrome.alarms.get
-      (chrome.alarms.get as any)(name, (alarm) => {
+      chrome.alarms.get(name, (alarm) => {
         if (chrome.runtime.lastError) {
-          reject(chrome.runtime.lastError);
+          reject(new Error(chrome.runtime.lastError.message));
         } else {
           resolve(alarm || null);
         }
@@ -86,17 +93,15 @@ export class AlarmManager {
     });
   }
 
-  // Add listener for alarm events
-  onAlarm(callback: (alarm: any) => void): number {
-    // @ts-ignore: Ignore type checking for chrome.alarms.onAlarm
-    const listener = (chrome.alarms.onAlarm as any).addListener(callback);
-    // Return a listener ID that can be used to remove the listener
-    return Date.now() + Math.random(); // Simple ID generation
+  /** Register a callback for all alarm events. Returns a listener ID for removal. */
+  onAlarm(callback: (alarm: chrome.alarms.Alarm) => void): number {
+    this.listenerId++;
+    this.listeners.set(this.listenerId, callback);
+    return this.listenerId;
   }
 
-  // Remove alarm listener (simplified - in practice you'd need to track listeners)
+  /** Remove a previously registered listener by ID. */
   removeListener(listenerId: number): void {
-    // Note: Chrome alarms don't provide a direct way to remove specific listeners
-    // This is a simplified implementation
+    this.listeners.delete(listenerId);
   }
 }

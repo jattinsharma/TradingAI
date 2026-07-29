@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Prediction, PredictionDocument } from '../../database/schemas/prediction.schema';
 import { TradeJournal, TradeJournalDocument } from '../../database/schemas/trade-journal.schema';
+import { safeToFixed } from '../../common/utils/safe-numeric.util';
 
 export interface OverallPerformance {
   totalPredictions: number;
@@ -137,7 +138,7 @@ export class PerformanceService {
         month,
         total: data.total,
         wins: data.wins,
-        winRate: data.total > 0 ? parseFloat(((data.wins / data.total) * 100).toFixed(1)) : 0,
+        winRate: data.total > 0 ? safeToFixed((data.wins / data.total) * 100, 1) : 0,
       }))
       .sort((a, b) => a.month.localeCompare(b.month));
 
@@ -151,11 +152,11 @@ export class PerformanceService {
       losses,
       partialWins,
       pending,
-      winRate: parseFloat(winRate.toFixed(1)),
-      avgConfidence: parseFloat(avgConf.toFixed(1)),
-      avgRr: parseFloat(avgRr.toFixed(2)),
-      avgMfe: parseFloat(avgMfe.toFixed(2)),
-      avgMae: parseFloat(avgMae.toFixed(2)),
+      winRate: safeToFixed(winRate, 1),
+      avgConfidence: safeToFixed(avgConf, 1),
+      avgRr: safeToFixed(avgRr, 2),
+      avgMfe: safeToFixed(avgMfe, 2),
+      avgMae: safeToFixed(avgMae, 2),
       bestStreak: Math.abs(bestStreak),
       worstStreak: Math.abs(worstStreak),
       currentStreak: Math.abs(currentStreak),
@@ -197,17 +198,15 @@ export class PerformanceService {
           wins,
           losses: resolved.length - wins,
           winRate: resolved.length > 0
-            ? parseFloat(((wins / resolved.length) * 100).toFixed(1))
+            ? safeToFixed((wins / resolved.length) * 100, 1)
             : 0,
-          avgConfidence: parseFloat(
-            (preds.reduce((s, p) => s + (p.confidence || 0), 0) / preds.length).toFixed(1),
+          avgConfidence: safeToFixed(
+            preds.reduce((s, p) => s + (p.confidence || 0), 0) / preds.length, 1,
           ),
-          avgRr: parseFloat(
-            (
-              preds.filter((p) => (p.riskRewardRatio ?? 0) > 0)
-                .reduce((s, p) => s + (p.riskRewardRatio ?? 0), 0) /
-              Math.max(1, preds.filter((p) => (p.riskRewardRatio ?? 0) > 0).length)
-            ).toFixed(2),
+          avgRr: safeToFixed(
+            preds.filter((p) => (p.riskRewardRatio ?? 0) > 0)
+              .reduce((s, p) => s + (p.riskRewardRatio ?? 0), 0) /
+            Math.max(1, preds.filter((p) => (p.riskRewardRatio ?? 0) > 0).length), 2,
           ),
           totalPnl: pnlBySymbol[symbol] || 0,
         };

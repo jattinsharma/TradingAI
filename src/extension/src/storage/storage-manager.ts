@@ -1,11 +1,9 @@
 // Storage manager for handling data persistence
 export class StorageManager {
-  constructor() {}
-
   // Set data in local storage (device-specific)
-  async set(key: string, value: any): Promise<void> {
+  async set<T = any>(key: string, value: T): Promise<void> {
     return new Promise((resolve, reject) => {
-      const obj: { [key: string]: any } = {};
+      const obj: Record<string, T> = {};
       obj[key] = value;
       chrome.storage.local.set(obj, () => {
         if (chrome.runtime.lastError) {
@@ -18,13 +16,13 @@ export class StorageManager {
   }
 
   // Get data from local storage
-  async get(key: string): Promise<any> {
+  async get<T = any>(key: string): Promise<T | undefined> {
     return new Promise((resolve, reject) => {
       chrome.storage.local.get([key], (result) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
-          resolve(result[key]);
+          resolve(result[key] as T | undefined);
         }
       });
     });
@@ -57,13 +55,13 @@ export class StorageManager {
   }
 
   // Set data in local storage (alias for set)
-  async setLocal(key: string, value: any): Promise<void> {
+  async setLocal<T = any>(key: string, value: T): Promise<void> {
     return this.set(key, value);
   }
 
   // Get data from local storage (alias for get)
-  async getLocal(key: string): Promise<any> {
-    return this.get(key);
+  async getLocal<T = any>(key: string): Promise<T | undefined> {
+    return this.get<T>(key);
   }
 
   // Remove data from local storage (alias for remove)
@@ -77,9 +75,9 @@ export class StorageManager {
   }
 
   // Set data in sync storage (syncs across devices)
-  async setSync(key: string, value: any): Promise<void> {
+  async setSync<T = any>(key: string, value: T): Promise<void> {
     return new Promise((resolve, reject) => {
-      const obj: { [key: string]: any } = {};
+      const obj: Record<string, T> = {};
       obj[key] = value;
       chrome.storage.sync.set(obj, () => {
         if (chrome.runtime.lastError) {
@@ -92,13 +90,13 @@ export class StorageManager {
   }
 
   // Get data from sync storage
-  async getSync(key: string): Promise<any> {
+  async getSync<T = any>(key: string): Promise<T | undefined> {
     return new Promise((resolve, reject) => {
       chrome.storage.sync.get([key], (result) => {
         if (chrome.runtime.lastError) {
           reject(chrome.runtime.lastError);
         } else {
-          resolve(result[key]);
+          resolve(result[key] as T | undefined);
         }
       });
     });

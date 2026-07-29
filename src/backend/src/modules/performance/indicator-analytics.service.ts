@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { IndicatorStats, IndicatorStatsDocument } from '../../database/schemas/indicator-stats.schema';
 import { Prediction, PredictionDocument } from '../../database/schemas/prediction.schema';
+import { safeToFixed } from '../../common/utils/safe-numeric.util';
 
 export interface IndicatorAnalysis {
   indicatorName: string;
@@ -77,13 +78,13 @@ export class IndicatorAnalyticsService {
         wins,
         losses,
         partialWins,
-        winRate: parseFloat(winRate.toFixed(1)),
-        avgConfidence: parseFloat(avgConf.toFixed(1)),
+        winRate: safeToFixed(winRate, 1),
+        avgConfidence: safeToFixed(avgConf, 1),
         bullishCount: bullish?.totalPredictions ?? 0,
         bearishCount: bearish?.totalPredictions ?? 0,
         neutralCount: neutral?.totalPredictions ?? 0,
-        bullishWinRate: parseFloat(bullishWinRate.toFixed(1)),
-        bearishWinRate: parseFloat(bearishWinRate.toFixed(1)),
+        bullishWinRate: safeToFixed(bullishWinRate, 1),
+        bearishWinRate: safeToFixed(bearishWinRate, 1),
         bestDirection: bestDir,
       };
     });
@@ -153,7 +154,7 @@ export class IndicatorAnalyticsService {
         indicators: indicators.split('+'),
         total: data.total,
         wins: data.wins,
-        winRate: parseFloat(((data.wins / data.total) * 100).toFixed(1)),
+        winRate: safeToFixed((data.wins / data.total) * 100, 1),
       }))
       .sort((a, b) => b.winRate - a.winRate)
       .slice(0, 15);
@@ -203,7 +204,7 @@ export class IndicatorAnalyticsService {
       .map(([range, data]) => ({
         range,
         total: data.total,
-        winRate: data.total > 0 ? parseFloat(((data.wins / data.total) * 100).toFixed(1)) : 0,
+        winRate: data.total > 0 ? safeToFixed((data.wins / data.total) * 100, 1) : 0,
       }));
   }
 

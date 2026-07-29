@@ -30,3 +30,6 @@ export class Watchlist {
 }
 
 export const WatchlistSchema = SchemaFactory.createForClass(Watchlist);
+
+WatchlistSchema.index({ userId: 1, name: 1 });
+WatchlistSchema.index({ userId: 1, createdAt: -1 });

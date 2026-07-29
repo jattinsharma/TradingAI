@@ -66,3 +66,6 @@ export class Analysis {
 }
 
 export const AnalysisSchema = SchemaFactory.createForClass(Analysis);
+
+AnalysisSchema.index({ symbol: 1, createdAt: -1 });
+AnalysisSchema.index({ createdAt: -1 });

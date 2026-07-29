@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Prediction, PredictionDocument } from '../../database/schemas/prediction.schema';
 import { MarketDataService } from '../market-data/market-data.service';
+import { safeToFixed } from '../../common/utils/safe-numeric.util';
 
 export interface PredictionStats {
   total: number;
@@ -32,7 +33,6 @@ export class PredictionsService {
 
   /**
    * Create a new prediction from an analysis result.
-   * Called by the extension after every analysis.
    */
   async create(data: Partial<Prediction>): Promise<Prediction> {
     const prediction = new this.predictionModel({
@@ -110,7 +110,7 @@ export class PredictionsService {
    * Delete a prediction.
    */
   async remove(id: string): Promise<void> {
-    const prediction = await this.findOne(id);
+    await this.findOne(id);
     await this.predictionModel.findByIdAndDelete(id).exec();
   }
 
@@ -139,8 +139,7 @@ export class PredictionsService {
       ? withRr.reduce((sum, p) => sum + (p.riskRewardRatio ?? 0), 0) / withRr.length
       : 0;
 
-    // Calculate streaks — scan entire history from oldest to newest
-    // to find all-time best winning streak and worst losing streak
+    // Calculate streaks
     const ascending = [...all]
       .filter((p) => p.result === 'WIN' || p.result === 'LOSS' || p.result === 'PARTIAL_WIN')
       .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -162,7 +161,7 @@ export class PredictionsService {
       }
     }
 
-    // Current streak (walk from newest until sign change)
+    // Current streak
     const descending = [...ascending].reverse();
     let currentStreak = 0;
     if (descending.length > 0) {
@@ -185,9 +184,9 @@ export class PredictionsService {
       partialWins,
       noEntries,
       expired,
-      winRate: parseFloat(winRate.toFixed(1)),
-      avgConfidence: parseFloat(avgConfidence.toFixed(1)),
-      avgRr: parseFloat(avgRr.toFixed(2)),
+      winRate: safeToFixed(winRate, 1),
+      avgConfidence: safeToFixed(avgConfidence, 1),
+      avgRr: safeToFixed(avgRr, 2),
       currentStreak,
       bestStreak,
       worstStreak: Math.abs(worstStreak),
@@ -245,7 +244,7 @@ export class PredictionsService {
         total: data.total,
         wins: data.wins,
         losses: data.total - data.wins,
-        winRate: data.total > 0 ? parseFloat(((data.wins / data.total) * 100).toFixed(1)) : 0,
+        winRate: data.total > 0 ? safeToFixed((data.wins / data.total) * 100, 1) : 0,
       }));
   }
 
@@ -285,15 +284,13 @@ export class PredictionsService {
           total: predictions.length,
           wins,
           losses: resolved.length - wins,
-          winRate: resolved.length > 0 ? parseFloat(((wins / resolved.length) * 100).toFixed(1)) : 0,
-          avgConfidence: parseFloat(
-            (predictions.reduce((s, p) => s + (p.confidence || 0), 0) / predictions.length).toFixed(1),
+          winRate: resolved.length > 0 ? safeToFixed((wins / resolved.length) * 100, 1) : 0,
+          avgConfidence: safeToFixed(
+            predictions.reduce((s, p) => s + (p.confidence || 0), 0) / predictions.length, 1,
           ),
-          avgRr: parseFloat(
-            (
-              predictions.filter((p) => (p.riskRewardRatio ?? 0) > 0).reduce((s, p) => s + (p.riskRewardRatio ?? 0), 0) /
-                Math.max(1, predictions.filter((p) => (p.riskRewardRatio ?? 0) > 0).length)
-            ).toFixed(2),
+          avgRr: safeToFixed(
+            predictions.filter((p) => (p.riskRewardRatio ?? 0) > 0).reduce((s, p) => s + (p.riskRewardRatio ?? 0), 0) /
+              Math.max(1, predictions.filter((p) => (p.riskRewardRatio ?? 0) > 0).length), 2,
           ),
         };
       })
@@ -332,9 +329,9 @@ export class PredictionsService {
           timeframe,
           total: predictions.length,
           wins,
-          winRate: resolved.length > 0 ? parseFloat(((wins / resolved.length) * 100).toFixed(1)) : 0,
-          avgConfidence: parseFloat(
-            (predictions.reduce((s, p) => s + (p.confidence || 0), 0) / predictions.length).toFixed(1),
+          winRate: resolved.length > 0 ? safeToFixed((wins / resolved.length) * 100, 1) : 0,
+          avgConfidence: safeToFixed(
+            predictions.reduce((s, p) => s + (p.confidence || 0), 0) / predictions.length, 1,
           ),
         };
       })
@@ -386,9 +383,9 @@ export class PredictionsService {
           total: predictions.length,
           wins,
           losses: predictions.length - wins,
-          winRate: parseFloat(((wins / predictions.length) * 100).toFixed(1)),
-          avgConfidence: parseFloat(
-            (predictions.reduce((s, p) => s + (p.confidence || 0), 0) / predictions.length).toFixed(1),
+          winRate: safeToFixed((wins / predictions.length) * 100, 1),
+          avgConfidence: safeToFixed(
+            predictions.reduce((s, p) => s + (p.confidence || 0), 0) / predictions.length, 1,
           ),
         };
       })

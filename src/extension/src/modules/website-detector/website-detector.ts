@@ -161,11 +161,11 @@ export class WebsiteDetector {
         }
       } catch (e) { /* ignore */ }
 
-      console.warn('[WebsiteDetector] Could not detect symbol from DOM or URL, using default BTCUSD');
-      return 'BTCUSD';
+      console.warn('[WebsiteDetector] Could not detect symbol from DOM or URL');
+      return '';
     } catch (error) {
       console.error('[WebsiteDetector] Error getting symbol:', error);
-      return 'BTCUSD';
+      return '';
     }
   }
 

@@ -60,3 +60,6 @@ export class TradeJournal {
 }
 
 export const TradeJournalSchema = SchemaFactory.createForClass(TradeJournal);
+
+TradeJournalSchema.index({ userId: 1, createdAt: -1 });
+TradeJournalSchema.index({ symbol: 1, createdAt: -1 });

@@ -48,7 +48,6 @@ import { PerformanceModule } from '../modules/performance/performance.module';
           process.env.MONGODB_URI ||
           'mongodb://localhost:27017/trading_copilot',
         connectionFactory: (connection) => {
-          // eslint-disable-next-line @typescript-eslint/no-var-requires
           connection.on('connected', () => {
             console.log('[MongoDB] Connected successfully');
           });

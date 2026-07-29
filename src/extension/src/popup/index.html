@@ -3,494 +3,870 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Trading Copilot</title>
+    <title>TradingAI Terminal</title>
     <style>
+        /* ═══════════════════════════════════════════
+           TRADINGAI TERMINAL — Professional Edition
+           Inspired by Bloomberg Terminal & TradingView
+           ═══════════════════════════════════════════ */
+
         /* ── Reset & Base ── */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
         :root {
-            --bg-primary: #0d1117;
-            --bg-secondary: #161b22;
-            --bg-tertiary: #21262d;
-            --bg-card: #1c2128;
-            --border: #30363d;
-            --text-primary: #e6edf3;
-            --text-secondary: #8b949e;
-            --text-muted: #6e7681;
-            --accent-green: #3fb950;
-            --accent-red: #f85149;
-            --accent-yellow: #d29922;
-            --accent-blue: #58a6ff;
-            --accent-purple: #bc8cff;
-            --gradient-buy: linear-gradient(135deg, #238636, #2ea043);
-            --gradient-sell: linear-gradient(135deg, #da3633, #f85149);
-            --gradient-hold: linear-gradient(135deg, #9e6a03, #d29922);
-            --radius: 8px;
-            --radius-sm: 4px;
-            --shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-            --shadow-lg: 0 4px 12px rgba(0,0,0,0.4);
+            --bg-deep: #0a0d12;
+            --bg-surface: #11161e;
+            --bg-elevated: #18202a;
+            --bg-hover: #1f2937;
+            --border-subtle: rgba(56, 68, 84, 0.5);
+            --border-faint: rgba(56, 68, 84, 0.25);
+            --text-primary: #d4dcec;
+            --text-secondary: #8895aa;
+            --text-muted: #556577;
+            --text-dim: #3a4a5a;
+            --green-buy: #26c66a;
+            --green-bg: rgba(38, 198, 106, 0.12);
+            --red-sell: #f25c5c;
+            --red-bg: rgba(242, 92, 92, 0.12);
+            --amber-hold: #e8a838;
+            --amber-bg: rgba(232, 168, 56, 0.12);
+            --blue-accent: #3b82f6;
+            --blue-bg: rgba(59, 130, 246, 0.1);
+            --purple-accent: #8b5cf6;
+            --gradient-header: linear-gradient(135deg, #0f1729 0%, #131d31 100%);
+            --radius-sm: 3px;
+            --radius-md: 6px;
+            --radius-lg: 8px;
+            --font-mono: 'SF Mono', 'Fira Code', 'Consolas', 'Monaco', 'Roboto Mono', monospace;
+            --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif;
         }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: var(--bg-primary);
+            font-family: var(--font-ui);
+            background: var(--bg-deep);
             color: var(--text-primary);
-            width: 400px;
-            min-height: 500px;
-            max-height: 600px;
+            width: 380px;
+            min-height: 480px;
+            max-height: 580px;
             overflow-y: auto;
-            font-size: 13px;
+            font-size: 12px;
             line-height: 1.5;
             scrollbar-width: thin;
-            scrollbar-color: var(--border) transparent;
+            scrollbar-color: var(--border-subtle) transparent;
+            -webkit-font-smoothing: antialiased;
         }
-        body::-webkit-scrollbar { width: 4px; }
+        body::-webkit-scrollbar { width: 3px; }
         body::-webkit-scrollbar-track { background: transparent; }
-        body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+        body::-webkit-scrollbar-thumb { background: var(--border-subtle); border-radius: 2px; }
 
         /* ── Layout ── */
-        .container { display: flex; flex-direction: column; height: 100%; }
-        .header {
-            padding: 12px 16px;
-            background: var(--bg-secondary);
-            border-bottom: 1px solid var(--border);
+        .container { display: flex; flex-direction: column; height: 100%; min-height: 480px; }
+
+        /* ── Terminal Header ── */
+        .terminal-header {
+            padding: 8px 14px;
+            background: var(--gradient-header);
+            border-bottom: 1px solid var(--border-subtle);
             display: flex;
             align-items: center;
             justify-content: space-between;
             flex-shrink: 0;
+            min-height: 40px;
         }
-        .header-left { display: flex; align-items: center; gap: 10px; }
-        .header-left h1 {
-            font-size: 15px;
-            font-weight: 600;
-            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        .header-right { display: flex; align-items: center; gap: 8px; }
-        .main { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
-        .footer {
-            padding: 10px 16px;
-            background: var(--bg-secondary);
-            border-top: 1px solid var(--border);
+        .terminal-brand {
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            flex-shrink: 0;
+            gap: 8px;
         }
-
-        /* ── Status Badge ── */
-        .status-badge {
+        .terminal-logo {
+            width: 18px;
+            height: 18px;
+            border-radius: 3px;
+            background: linear-gradient(135deg, var(--blue-accent), var(--purple-accent));
             display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 11px;
-            color: var(--text-secondary);
-            padding: 4px 8px;
-            background: var(--bg-tertiary);
-            border-radius: 12px;
-        }
-        .status-dot {
-            width: 6px; height: 6px; border-radius: 50%;
-            background: var(--text-muted);
-        }
-        .status-dot.online { background: var(--accent-green); box-shadow: 0 0 4px var(--accent-green); }
-        .status-dot.offline { background: var(--text-muted); }
-        .status-dot.analyzing { background: var(--accent-yellow); animation: pulse 1s infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-
-        /* ── Buttons ── */
-        .btn {
-            display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            padding: 6px 14px;
-            border: none;
-            border-radius: var(--radius);
+            font-size: 9px;
+            font-weight: 800;
+            color: #fff;
+            font-family: var(--font-mono);
+        }
+        .terminal-title {
             font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            text-decoration: none;
-            white-space: nowrap;
-        }
-        .btn:active { transform: scale(0.97); }
-        .btn-primary {
-            background: var(--accent-blue);
-            color: #fff;
-        }
-        .btn-primary:hover { background: #4c9aff; box-shadow: 0 0 8px rgba(88,166,255,0.4); }
-        .btn-analyze {
-            background: var(--gradient-buy);
-            color: #fff;
-            padding: 8px 20px;
-            font-size: 13px;
             font-weight: 600;
-            border-radius: 20px;
-            box-shadow: var(--shadow);
+            letter-spacing: 0.3px;
+            color: var(--text-primary);
+            font-family: var(--font-mono);
         }
-        .btn-analyze:hover { box-shadow: 0 0 12px rgba(46,160,67,0.5); transform: translateY(-1px); }
-        .btn-analyze:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-        .btn-ghost {
-            background: transparent;
-            color: var(--text-secondary);
-            padding: 4px 8px;
-            font-size: 16px;
+        .terminal-title span {
+            color: var(--text-muted);
+            font-weight: 400;
         }
-        .btn-ghost:hover { color: var(--text-primary); background: var(--bg-tertiary); }
-        .btn-sm { padding: 4px 10px; font-size: 11px; }
-        .btn-danger { background: var(--accent-red); color: #fff; }
-        .btn-danger:hover { background: #ff6b6b; }
-        .btn-icon { width: 28px; height: 28px; padding: 0; border-radius: 50%; font-size: 14px; }
 
-        /* ── Cards ── */
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 12px;
+        /* ── Connection Indicator ── */
+        .conn-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 10px;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+            padding: 2px 8px;
+            background: rgba(56, 68, 84, 0.15);
+            border-radius: 10px;
+            border: 1px solid var(--border-faint);
         }
-        .card-header {
+        .conn-dot {
+            width: 5px; height: 5px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            transition: all 0.3s ease;
+        }
+        .conn-dot.online {
+            background: var(--green-buy);
+            box-shadow: 0 0 6px rgba(38, 198, 106, 0.5);
+        }
+        .conn-dot.offline {
+            background: var(--text-dim);
+        }
+        .conn-dot.analyzing {
+            background: var(--amber-hold);
+            animation: pulse-dot 0.8s ease-in-out infinite;
+        }
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; box-shadow: 0 0 4px var(--amber-hold); }
+            50% { opacity: 0.4; box-shadow: 0 0 8px var(--amber-hold); }
+        }
+
+        /* ── Main Content ── */
+        .main {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* ── Panels (replaces 'card') ── */
+        .panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-faint);
+            border-radius: var(--radius-md);
+            transition: border-color 0.2s ease;
+        }
+        .panel:hover {
+            border-color: var(--border-subtle);
+        }
+        .panel-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            margin-bottom: 8px;
+            padding: 7px 10px;
+            border-bottom: 1px solid var(--border-faint);
         }
-        .card-title {
-            font-size: 12px;
+        .panel-label {
+            font-size: 9px;
             font-weight: 600;
-            color: var(--text-secondary);
+            color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 0.5px;
+            letter-spacing: 0.8px;
+            font-family: var(--font-mono);
+        }
+        .panel-body {
+            padding: 8px 10px;
         }
 
-        /* ── Current Analysis ── */
-        .current-analysis { display: flex; flex-direction: column; gap: 8px; }
+        /* ── Symbol Bar ── */
         .symbol-bar {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            padding: 8px 10px;
             gap: 8px;
         }
-        .symbol-info { display: flex; align-items: center; gap: 8px; }
-        .symbol-name {
-            font-size: 16px;
-            font-weight: 700;
-        }
-        .symbol-timeframe {
-            font-size: 11px;
-            color: var(--text-muted);
-            background: var(--bg-tertiary);
-            padding: 2px 6px;
-            border-radius: var(--radius-sm);
-        }
-        .recommendation-badge {
-            padding: 4px 12px;
-            border-radius: 16px;
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .recommendation-badge.buy { background: var(--gradient-buy); color: #fff; }
-        .recommendation-badge.sell { background: var(--gradient-sell); color: #fff; }
-        .recommendation-badge.hold { background: var(--gradient-hold); color: #fff; }
-
-        .price-row {
+        .symbol-group {
             display: flex;
             align-items: center;
-            gap: 16px;
-            font-size: 12px;
-            color: var(--text-secondary);
+            gap: 8px;
+            min-width: 0;
         }
-        .price-value { font-size: 16px; font-weight: 600; color: var(--text-primary); }
+        .symbol-ticker {
+            font-size: 18px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+            color: var(--text-primary);
+            letter-spacing: 0.5px;
+        }
+        .symbol-ticker.dim {
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .symbol-meta {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .timeframe-badge {
+            font-size: 9px;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+            background: var(--bg-elevated);
+            padding: 2px 6px;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-faint);
+        }
+        .exchange-badge {
+            font-size: 9px;
+            color: var(--blue-accent);
+            font-family: var(--font-mono);
+            background: var(--blue-bg);
+            padding: 2px 5px;
+            border-radius: var(--radius-sm);
+            border: 1px solid rgba(59, 130, 246, 0.15);
+        }
 
-        .confidence-bar {
-            width: 100%;
-            height: 4px;
-            background: var(--bg-tertiary);
+        /* ── Signal Panel ── */
+        .signal-panel { position: relative; overflow: hidden; }
+        .signal-bg {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            opacity: 0.06;
+            transition: opacity 0.5s ease;
+        }
+        .signal-bg.buy { background: linear-gradient(135deg, var(--green-buy), transparent); }
+        .signal-bg.sell { background: linear-gradient(135deg, var(--red-sell), transparent); }
+        .signal-bg.hold { background: linear-gradient(135deg, var(--amber-hold), transparent); }
+        .signal-content {
+            position: relative;
+            z-index: 1;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .signal-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .signal-recommendation {
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            font-family: var(--font-mono);
+            transition: color 0.3s ease;
+        }
+        .signal-recommendation.buy { color: var(--green-buy); }
+        .signal-recommendation.sell { color: var(--red-sell); }
+        .signal-recommendation.hold { color: var(--amber-hold); }
+        .signal-price {
+            font-size: 18px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            color: var(--text-primary);
+        }
+        .signal-price.dim {
+            color: var(--text-muted);
+            font-size: 14px;
+            font-weight: 400;
+        }
+
+        /* ── Confidence Meter ── */
+        .conf-meter {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .conf-track {
+            flex: 1;
+            height: 3px;
+            background: var(--bg-elevated);
             border-radius: 2px;
             overflow: hidden;
         }
-        .confidence-fill {
+        .conf-fill {
             height: 100%;
             border-radius: 2px;
-            transition: width 0.5s ease;
+            transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        .confidence-fill.buy { background: var(--gradient-buy); }
-        .confidence-fill.sell { background: var(--gradient-sell); }
-        .confidence-fill.hold { background: var(--gradient-hold); }
+        .conf-fill.buy { background: var(--green-buy); }
+        .conf-fill.sell { background: var(--red-sell); }
+        .conf-fill.hold { background: var(--amber-hold); }
+        .conf-label {
+            font-size: 11px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            min-width: 36px;
+            text-align: right;
+        }
+        .conf-label.buy { color: var(--green-buy); }
+        .conf-label.sell { color: var(--red-sell); }
+        .conf-label.hold { color: var(--amber-hold); }
 
-        /* ── Trade Setup ── */
-        .trade-setup { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
-        .trade-metric {
-            background: var(--bg-tertiary);
+        /* ── Trade Setup Grid ── */
+        .trade-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3px;
+        }
+        .trade-cell {
+            display: flex;
+            flex-direction: column;
+            padding: 5px 8px;
+            background: var(--bg-elevated);
             border-radius: var(--radius-sm);
-            padding: 6px 10px;
+        }
+        .trade-cell-label {
+            font-size: 8px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-family: var(--font-mono);
+        }
+        .trade-cell-value {
+            font-size: 12px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            margin-top: 1px;
+        }
+        .trade-cell-value.buy { color: var(--green-buy); }
+        .trade-cell-value.sell { color: var(--red-sell); }
+        .trade-cell-value.hold { color: var(--amber-hold); }
+        .trade-cell-value.muted { color: var(--text-secondary); }
+
+        /* ── Reasoning ── */
+        .reasoning-box {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            max-height: 52px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: max-height 0.3s ease;
+            padding: 6px 8px;
+            background: var(--bg-elevated);
+            border-radius: var(--radius-sm);
+            font-family: var(--font-ui);
+        }
+        .reasoning-box:hover { background: var(--bg-hover); }
+        .reasoning-box.expanded { max-height: none; }
+        .reasoning-box.dim { color: var(--text-muted); font-style: italic; }
+
+        /* ── Stats Grid ── */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 4px;
+        }
+        .stat-cell {
+            text-align: center;
+            padding: 6px 2px;
+        }
+        .stat-value {
+            font-size: 15px;
+            font-weight: 700;
+            font-family: var(--font-mono);
+        }
+        .stat-label {
+            font-size: 8px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            font-family: var(--font-mono);
+            margin-top: 1px;
+        }
+
+        /* ── Analyze Button ── */
+        .analyze-btn {
+            width: 100%;
+            padding: 9px 16px;
+            border: none;
+            border-radius: var(--radius-md);
+            font-size: 12px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: linear-gradient(135deg, #1a2332, #1e2a3d);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+            letter-spacing: 0.3px;
+        }
+        .analyze-btn:hover {
+            background: linear-gradient(135deg, #1e2a3d, #243349);
+            border-color: var(--blue-accent);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.08);
+        }
+        .analyze-btn:active {
+            transform: scale(0.99);
+        }
+        .analyze-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .analyze-btn .key-hint {
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 400;
+            border: 1px solid var(--border-faint);
+            padding: 0 5px;
+            border-radius: 3px;
+            margin-left: 6px;
+        }
+        .analyze-btn.ready {
+            border-color: rgba(38, 198, 106, 0.3);
+        }
+        .analyze-btn.ready:hover {
+            border-color: var(--green-buy);
+            box-shadow: 0 0 20px rgba(38, 198, 106, 0.08);
+        }
+        .analyze-btn.analyzing {
+            animation: btn-pulse 1.5s ease-in-out infinite;
+        }
+        @keyframes btn-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .analyze-btn.error {
+            border-color: rgba(242, 92, 92, 0.3);
+            color: var(--text-muted);
+        }
+
+        /* ── Tabs ── */
+        .tab-bar {
+            display: flex;
+            gap: 1px;
+            background: var(--bg-elevated);
+            border-radius: var(--radius-sm);
+            padding: 2px;
+            border: 1px solid var(--border-faint);
+        }
+        .tab-item {
+            flex: 1;
+            padding: 5px 8px;
+            text-align: center;
+            font-size: 9px;
+            font-weight: 500;
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-muted);
+            border: none;
+            background: transparent;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .tab-item.active {
+            background: var(--bg-surface);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-faint);
+        }
+        .tab-item:hover:not(.active) {
+            color: var(--text-secondary);
+        }
+
+        /* ── History List ── */
+        .history-list {
             display: flex;
             flex-direction: column;
             gap: 2px;
+            max-height: 120px;
+            overflow-y: auto;
         }
-        .trade-metric-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; }
-        .trade-metric-value { font-size: 12px; font-weight: 600; }
-        .trade-metric-value.green { color: var(--accent-green); }
-        .trade-metric-value.red { color: var(--accent-red); }
-        .trade-metric-value.yellow { color: var(--accent-yellow); }
-
-        /* ── Stats Row ── */
-        .stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-        .stat-card {
-            text-align: center;
-            padding: 8px 4px;
-        }
-        .stat-value { font-size: 16px; font-weight: 700; }
-        .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-top: 2px; }
-
-        /* ── History List ── */
-        .history-list { display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto; }
         .history-item {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 6px 8px;
-            background: var(--bg-tertiary);
+            padding: 5px 8px;
+            background: var(--bg-elevated);
             border-radius: var(--radius-sm);
-            font-size: 11px;
+            font-size: 10px;
+            font-family: var(--font-mono);
             cursor: pointer;
             transition: background 0.15s;
+            border: 1px solid transparent;
         }
-        .history-item:hover { background: var(--border); }
-        .history-symbol { font-weight: 600; font-size: 11px; }
+        .history-item:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-faint);
+        }
+        .history-symbol { font-weight: 600; font-size: 10px; color: var(--text-primary); }
+        .history-time { color: var(--text-muted); font-size: 9px; }
         .history-rec {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 600;
             padding: 1px 6px;
-            border-radius: 8px;
+            border-radius: 6px;
         }
-        .history-rec.buy { background: rgba(46,160,67,0.2); color: var(--accent-green); }
-        .history-rec.sell { background: rgba(248,81,73,0.2); color: var(--accent-red); }
-        .history-rec.hold { background: rgba(210,153,34,0.2); color: var(--accent-yellow); }
-        .history-conf { font-size: 10px; color: var(--text-muted); }
+        .history-rec.buy { background: var(--green-bg); color: var(--green-buy); }
+        .history-rec.sell { background: var(--red-bg); color: var(--red-sell); }
+        .history-rec.hold { background: var(--amber-bg); color: var(--amber-hold); }
+        .history-conf { font-size: 9px; color: var(--text-muted); }
         .history-empty {
             text-align: center;
             color: var(--text-muted);
-            font-size: 11px;
-            padding: 16px;
+            font-size: 10px;
+            padding: 12px;
+            font-family: var(--font-mono);
         }
 
-        /* ── Reasoning ── */
-        .reasoning-text {
-            font-size: 11px;
-            color: var(--text-secondary);
-            line-height: 1.5;
-            max-height: 60px;
-            overflow: hidden;
-            transition: max-height 0.3s ease;
-            cursor: pointer;
+        /* ── Bottom Status Bar ── */
+        .status-bar {
+            padding: 5px 14px;
+            background: var(--bg-surface);
+            border-top: 1px solid var(--border-faint);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            min-height: 26px;
         }
-        .reasoning-text.expanded { max-height: none; }
+        .status-left, .status-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-item {
+            font-size: 9px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .status-item.active {
+            color: var(--text-secondary);
+        }
+        .status-item .dot {
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: var(--text-dim);
+        }
+        .status-item .dot.online { background: var(--green-buy); }
+        .status-item .dot.offline { background: var(--text-dim); }
 
         /* ── Loading ── */
+        .loading-screen {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
         .loading-spinner {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid var(--border);
-            border-top-color: var(--accent-blue);
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--border-faint);
+            border-top-color: var(--blue-accent);
             border-radius: 50%;
-            animation: spin 0.6s linear infinite;
+            animation: spin 0.7s linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .loading-text { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); font-size: 12px; padding: 16px; justify-content: center; }
-
-        /* ── Tabs ── */
-        .tabs { display: flex; gap: 2px; background: var(--bg-tertiary); border-radius: var(--radius); padding: 2px; }
-        .tab {
-            flex: 1;
-            padding: 6px 8px;
-            text-align: center;
+        .loading-text {
             font-size: 11px;
-            font-weight: 500;
-            color: var(--text-muted);
-            border: none;
-            background: transparent;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.15s;
+            font-family: var(--font-mono);
+            letter-spacing: 0.5px;
         }
-        .tab.active { background: var(--bg-card); color: var(--text-primary); }
-        .tab:hover:not(.active) { color: var(--text-secondary); }
 
-        /* ── Animations ── */
-        .fade-in { animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-        .slide-up { animation: slideUp 0.3s ease; }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* ── Section Toggle ── */
-        .section-hidden { display: none; }
+        /* ── Login Prompt ── */
+        .login-prompt {
+            text-align: center;
+            padding: 24px 16px;
+        }
+        .login-title {
+            font-size: 14px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        .login-subtitle {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-bottom: 14px;
+            font-family: var(--font-mono);
+        }
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 260px;
+            margin: 0 auto;
+        }
+        .login-input {
+            padding: 7px 10px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            font-size: 11px;
+            font-family: var(--font-mono);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .login-input:focus {
+            border-color: var(--blue-accent);
+        }
+        .login-input::placeholder {
+            color: var(--text-dim);
+        }
+        .login-btn {
+            padding: 7px 12px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            font-weight: 600;
+            font-family: var(--font-mono);
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+        }
+        .login-btn:hover {
+            background: var(--bg-hover);
+            border-color: var(--blue-accent);
+        }
+        .login-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .login-error {
+            color: var(--red-sell);
+            font-size: 10px;
+            font-family: var(--font-mono);
+            display: none;
+            text-align: left;
+            padding: 4px 0;
+        }
 
         /* ── Password Requirements ── */
+        .pw-reqs {
+            display: none;
+            margin-top: 4px;
+            padding: 6px 8px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-faint);
+            border-radius: var(--radius-sm);
+            font-size: 9px;
+            line-height: 1.8;
+            text-align: left;
+            font-family: var(--font-mono);
+        }
         .pw-req {
-            font-size: 10px;
-            color: var(--accent-red);
-            transition: color 0.2s ease;
+            color: var(--red-sell);
+            transition: color 0.2s;
         }
         .pw-req.met {
-            color: var(--accent-green);
+            color: var(--green-buy);
+        }
+
+        /* ── Animations ── */
+        .fade-in {
+            animation: fadeIn 0.25s ease;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .slide-up {
+            animation: slideUp 0.25s ease;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Utilities ── */
+        .section-hidden { display: none !important; }
+
+        /* ── Scrollable panel body ── */
+        .panel-body.scrollable {
+            max-height: 140px;
+            overflow-y: auto;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <div class="header-left">
-                <h1>AI Trading Copilot</h1>
+        <!-- ═══ Terminal Header ═══ -->
+        <div class="terminal-header">
+            <div class="terminal-brand">
+                <div class="terminal-logo">AI</div>
+                <div class="terminal-title">TRADINGAI <span>| copilot</span></div>
             </div>
-            <div class="header-right">
-                <span class="status-badge">
-                    <span id="status-dot" class="status-dot offline"></span>
-                    <span id="status-text">Disconnected</span>
-                </span>
+            <div class="conn-indicator">
+                <span class="conn-dot offline" id="conn-dot"></span>
+                <span id="conn-text">OFFLINE</span>
             </div>
         </div>
 
-        <!-- Main Content -->
+        <!-- ═══ Main Content ═══ -->
         <div class="main" id="main-content">
-            <!-- Loading state -->
-            <div id="loading-state" class="loading-text">
-                <span class="loading-spinner"></span>
-                Loading...
+            <!-- Loading State -->
+            <div id="loading-screen" class="loading-screen">
+                <div class="loading-spinner"></div>
+                <div class="loading-text">Initializing...</div>
             </div>
 
-            <!-- Not connected state -->
-            <div id="login-prompt" class="card section-hidden">
-                <div style="text-align:center;padding:20px 12px;">
-                    <div style="font-size:32px;margin-bottom:12px;">📈</div>
-                    <h2 style="font-size:16px;font-weight:600;margin-bottom:8px;">Connect to Backend</h2>
-                    <p style="font-size:12px;color:var(--text-secondary);margin-bottom:16px;">
-                        Login to save analyses, track accuracy, and maintain your trading journal.
-                    </p>
-                    <div id="login-form" style="display:flex;flex-direction:column;gap:8px;max-width:280px;margin:0 auto;">
-                        <input id="login-email" type="email" placeholder="Email" autocomplete="email" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;" />
+            <!-- Login Prompt -->
+            <div id="login-prompt" class="panel section-hidden">
+                <div class="login-prompt">
+                    <div class="login-title">AUTHENTICATION REQUIRED</div>
+                    <div class="login-subtitle">Sign in to enable AI analysis</div>
+                    <div class="login-form">
+                        <input id="login-email" class="login-input" type="email" placeholder="Email" autocomplete="email" />
                         <div style="position:relative;">
-                            <input id="login-password" type="password" placeholder="Password" autocomplete="new-password" style="padding:8px 12px;background:var(--bg-tertiary);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:12px;width:100%;" />
-                            <div id="password-requirements" style="display:none;margin-top:6px;padding:8px 10px;background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:10px;line-height:1.6;">
-                                <div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Password must contain:</div>
-                                <div id="pw-req-length" class="pw-req">✗ At least 8 characters</div>
-                                <div id="pw-req-upper" class="pw-req">✗ One uppercase letter</div>
-                                <div id="pw-req-lower" class="pw-req">✗ One lowercase letter</div>
-                                <div id="pw-req-number" class="pw-req">✗ One number</div>
+                            <input id="login-password" class="login-input" type="password" placeholder="Password" autocomplete="new-password" style="width:100%;" />
+                            <div class="pw-reqs" id="pw-reqs">
+                                <div class="pw-req" id="pw-req-length">✗ 8+ characters</div>
+                                <div class="pw-req" id="pw-req-upper">✗ Uppercase letter</div>
+                                <div class="pw-req" id="pw-req-lower">✗ Lowercase letter</div>
+                                <div class="pw-req" id="pw-req-number">✗ Number</div>
                             </div>
                         </div>
-                        <button id="login-btn" class="btn btn-primary" style="width:100%;">Login / Register</button>
-                        <div id="login-error" style="color:var(--accent-red);font-size:11px;display:none;text-align:left;padding:4px 0;"></div>
+                        <button id="login-btn" class="login-btn">SIGN IN / REGISTER</button>
+                        <div id="login-error" class="login-error"></div>
                     </div>
                 </div>
             </div>
 
-            <!-- Dashboard (shown when connected) -->
-            <div id="dashboard" class="section-hidden" style="display:flex;flex-direction:column;gap:12px;">
-                <!-- Current Analysis -->
-                <div class="card current-analysis fade-in">
+            <!-- ═══ Dashboard ═══ -->
+            <div id="dashboard" class="section-hidden" style="display:flex;flex-direction:column;gap:8px;">
+
+                <!-- Symbol & Price Row -->
+                <div class="panel" style="padding:0;">
                     <div class="symbol-bar">
-                        <div class="symbol-info">
-                            <span class="symbol-name" id="current-symbol">---</span>
-                            <span class="symbol-timeframe" id="current-timeframe">---</span>
+                        <div class="symbol-group">
+                            <span class="symbol-ticker" id="sym-ticker">---</span>
+                            <div class="symbol-meta">
+                                <span class="timeframe-badge" id="sym-tf">---</span>
+                                <span class="exchange-badge" id="sym-exch">TV</span>
+                            </div>
                         </div>
-                        <span class="recommendation-badge hold" id="current-rec">HOLD</span>
-                    </div>
-                    <div class="price-row">
-                        <span class="price-value" id="current-price">---</span>
-                        <span>Confidence: <strong id="current-confidence">0%</strong></span>
-                    </div>
-                    <div class="confidence-bar">
-                        <div class="confidence-fill hold" id="confidence-fill" style="width:0%"></div>
-                    </div>
-                    <div id="trade-setup-container" class="trade-setup section-hidden">
-                        <div class="trade-metric">
-                            <span class="trade-metric-label">Entry</span>
-                            <span class="trade-metric-value green" id="entry-price">---</span>
-                        </div>
-                        <div class="trade-metric">
-                            <span class="trade-metric-label">Stop Loss</span>
-                            <span class="trade-metric-value red" id="stop-loss">---</span>
-                        </div>
-                        <div class="trade-metric">
-                            <span class="trade-metric-label">Take Profit</span>
-                            <span class="trade-metric-value green" id="take-profit">---</span>
-                        </div>
-                        <div class="trade-metric">
-                            <span class="trade-metric-label">R:R Ratio</span>
-                            <span class="trade-metric-value yellow" id="risk-reward">---</span>
-                        </div>
-                    </div>
-                    <div class="reasoning-text" id="reasoning-text">No analysis yet. Click "Analyze Market" to start.</div>
-                </div>
-
-                <!-- Action Buttons -->
-                <div style="display:flex;gap:8px;">
-                    <button id="analyze-btn" class="btn btn-analyze" style="flex:1;">
-                        ⚡ Analyze Market
-                    </button>
-                </div>
-
-                <!-- Stats Row -->
-                <div class="stats-row fade-in">
-                    <div class="card stat-card">
-                        <div class="stat-value" id="stat-analyses-today" style="color:var(--accent-blue);">0</div>
-                        <div class="stat-label">Today</div>
-                    </div>
-                    <div class="card stat-card">
-                        <div class="stat-value" id="stat-win-rate" style="color:var(--accent-green);">--%</div>
-                        <div class="stat-label">Win Rate</div>
-                    </div>
-                    <div class="card stat-card">
-                        <div class="stat-value" id="stat-avg-conf" style="color:var(--accent-yellow);">--%</div>
-                        <div class="stat-label">Avg Conf</div>
+                        <span class="signal-price" id="sym-price">---</span>
                     </div>
                 </div>
 
-                <!-- Tabs -->
-                <div class="tabs" role="tablist">
-                    <button class="tab active" data-tab="recent" role="tab">Recent</button>
-                    <button class="tab" data-tab="watchlist" role="tab">Watchlist</button>
+                <!-- Signal Panel -->
+                <div class="panel signal-panel" id="signal-panel">
+                    <div class="signal-bg hold" id="signal-bg"></div>
+                    <div class="signal-content">
+                        <div class="signal-row">
+                            <span class="signal-recommendation hold" id="sig-rec">HOLD</span>
+                            <span class="signal-price" id="sig-price-toggle"></span>
+                        </div>
+                        <div class="conf-meter">
+                            <div class="conf-track">
+                                <div class="conf-fill hold" id="conf-fill" style="width:0%"></div>
+                            </div>
+                            <span class="conf-label hold" id="conf-label">0%</span>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Recent Analyses -->
-                <div id="tab-recent" class="card fade-in" role="tabpanel">
-                    <div class="card-header">
-                        <span class="card-title">Recent Analyses</span>
-                        <button class="btn btn-ghost btn-sm" id="view-all-btn">View all →</button>
-                    </div>
-                    <div class="history-list" id="history-list">
-                        <div class="history-empty">No analyses yet. Analyze a chart to get started.</div>
+                <!-- Analyze Button -->
+                <button id="analyze-btn" class="analyze-btn ready">
+                    ⚡ ANALYZE CHART <span class="key-hint">CTRL+ENTER</span>
+                </button>
+
+                <!-- Trade Setup (hidden until analysis) -->
+                <div class="panel section-hidden" id="trade-setup-panel">
+                    <div class="panel-body" style="padding:6px 10px;">
+                        <div class="trade-grid">
+                            <div class="trade-cell">
+                                <span class="trade-cell-label">Entry</span>
+                                <span class="trade-cell-value muted" id="trade-entry">---</span>
+                            </div>
+                            <div class="trade-cell">
+                                <span class="trade-cell-label">Stop Loss</span>
+                                <span class="trade-cell-value sell" id="trade-sl">---</span>
+                            </div>
+                            <div class="trade-cell">
+                                <span class="trade-cell-label">Take Profit</span>
+                                <span class="trade-cell-value buy" id="trade-tp">---</span>
+                            </div>
+                            <div class="trade-cell">
+                                <span class="trade-cell-label">R:R</span>
+                                <span class="trade-cell-value hold" id="trade-rr">---</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Watchlist -->
-                <div id="tab-watchlist" class="card section-hidden fade-in" role="tabpanel">
-                    <div class="card-header">
-                        <span class="card-title">Watchlist</span>
-                        <button class="btn btn-ghost btn-sm" id="edit-watchlist-btn">Edit</button>
+                <!-- Reasoning (hidden until analysis) -->
+                <div class="panel section-hidden" id="reasoning-panel">
+                    <div class="panel-body" style="padding:0;">
+                        <div class="reasoning-box dim" id="reasoning-box">
+                            No analysis yet. Analyze a chart to begin.
+                        </div>
                     </div>
-                    <div class="history-list" id="watchlist-list">
-                        <div class="history-empty">No symbols in watchlist. Add symbols through settings.</div>
+                </div>
+
+                <!-- Stats -->
+                <div class="panel">
+                    <div class="panel-body" style="padding:6px 10px;">
+                        <div class="stats-grid">
+                            <div class="stat-cell">
+                                <div class="stat-value" id="stat-today" style="color:var(--blue-accent);">0</div>
+                                <div class="stat-label">Today</div>
+                            </div>
+                            <div class="stat-cell">
+                                <div class="stat-value" id="stat-winrate" style="color:var(--green-buy);">--%</div>
+                                <div class="stat-label">Win Rate</div>
+                            </div>
+                            <div class="stat-cell">
+                                <div class="stat-value" id="stat-avgconf" style="color:var(--amber-hold);">--%</div>
+                                <div class="stat-label">Avg Conf</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tabs + History -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-label">History</span>
+                        <div class="tab-bar">
+                            <button class="tab-item active" data-tab="recent">Recent</button>
+                            <button class="tab-item" data-tab="watchlist">Watchlist</button>
+                        </div>
+                    </div>
+                    <div class="panel-body scrollable">
+                        <div id="tab-recent">
+                            <div class="history-list" id="history-list">
+                                <div class="history-empty">No analyses recorded yet.</div>
+                            </div>
+                        </div>
+                        <div id="tab-watchlist" class="section-hidden">
+                            <div class="history-list" id="watchlist-list">
+                                <div class="history-empty">Watchlist is empty.</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Footer -->
-        <div class="footer">
-            <div style="display:flex;gap:4px;">
-                <button id="settings-btn" class="btn btn-ghost btn-sm" title="Settings">⚙️ Settings</button>
-                <button id="journal-btn" class="btn btn-ghost btn-sm" title="Trade Journal">📓 Journal</button>
+        <!-- ═══ Status Bar ═══ -->
+        <div class="status-bar">
+            <div class="status-left">
+                <span class="status-item" id="status-platform">
+                    <span class="dot offline"></span>
+                    Not connected
+                </span>
+                <span class="status-item" id="status-time">--:--:--</span>
             </div>
-            <div style="display:flex;gap:4px;align-items:center;">
-                <button id="refresh-btn" class="btn btn-ghost btn-icon" title="Refresh Stats">🔄</button>
-                <button id="theme-toggle" class="btn btn-ghost btn-icon" title="Toggle Theme">🌙</button>
+            <div class="status-right">
+                <button id="settings-btn" class="status-item" style="background:none;border:none;cursor:pointer;padding:0;font-family:inherit;font-size:inherit;color:inherit;" title="Settings">⚙ Settings</button>
+                <span class="status-item" id="status-version">v1.0</span>
             </div>
         </div>
     </div>

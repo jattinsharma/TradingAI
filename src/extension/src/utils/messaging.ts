@@ -1,7 +1,22 @@
-// Messaging utilities for extension communication
-export function sendMessageToBackend(message: any) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
+/**
+ * Messaging utilities for extension communication.
+ *
+ * All messages flow through chrome.runtime.sendMessage to the background service worker.
+ *
+ * ── sendMessageToBackend  – send message to background (content script ↔ background)
+ * ── sendMessageToTab      – send message to a specific tab (background ↔ content script)
+ * ── onMessage             – register a listener for incoming messages
+ */
+
+export interface MessagePayload {
+  type: string;
+  payload?: unknown;
+  [key: string]: unknown;
+}
+
+export function sendMessageToBackend<T = any>(message: MessagePayload): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response: T) => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
       } else {
@@ -11,9 +26,9 @@ export function sendMessageToBackend(message: any) {
   });
 }
 
-export function sendMessageToTab(tabId: number, message: any) {
-  return new Promise((resolve, reject) => {
-    chrome.tabs.sendMessage(tabId, message, (response) => {
+export function sendMessageToTab<T = any>(tabId: number, message: MessagePayload): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, (response: T) => {
       if (chrome.runtime.lastError) {
         reject(chrome.runtime.lastError);
       } else {
@@ -23,23 +38,21 @@ export function sendMessageToTab(tabId: number, message: any) {
   });
 }
 
-export function sendMessageToPopup(message: any) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(chrome.runtime.lastError);
-      } else {
-        resolve(response);
-      }
-    });
-  });
-}
-
-export function broadcastMessage(message: any) {
-  chrome.runtime.sendMessage(message);
-}
-
-// Listen for messages from background
-export function onMessage(callback: (message: any, sender: chrome.runtime.MessageSender, sendResponse: (response: any) => void) => boolean | void) {
-  return chrome.runtime.onMessage.addListener(callback);
+/**
+ * Register a listener for messages from background/popup.
+ * Returns the listener for later removal (cleanup on SPA navigation).
+ */
+export function onMessage(
+  callback: (
+    message: MessagePayload,
+    sender: chrome.runtime.MessageSender,
+    sendResponse: (response?: unknown) => void,
+  ) => boolean | void,
+): (
+  message: MessagePayload,
+  sender: chrome.runtime.MessageSender,
+  sendResponse: (response?: unknown) => void,
+) => void {
+  chrome.runtime.onMessage.addListener(callback as Parameters<typeof chrome.runtime.onMessage.addListener>[0]);
+  return callback;
 }

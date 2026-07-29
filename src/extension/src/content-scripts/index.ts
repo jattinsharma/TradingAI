@@ -3,7 +3,7 @@
 // and displaying analysis results
 
 // Import necessary modules
-import { sendMessageToBackend, sendMessageToPopup, onMessage } from '../utils/messaging';
+import { sendMessageToBackend } from '../utils/messaging';
 import { WebsiteDetector } from '../modules/website-detector/website-detector';
 import { ChartOverlay } from '../overlay/chart-overlay';
 import { isTradingViewPage, extractFromTradingViewDOM } from '../modules/tradingview';
@@ -56,6 +56,9 @@ async function initialize(): Promise<void> {
     // Set up periodic analysis (if enabled)
     setupPeriodicAnalysis();
 
+    // Set up SPA navigation observer (re-creates if already exists from cleanup)
+    setupSpaObserver();
+
     // If on TradingView, start DOM observer for auto-detection
     if (isTradingViewPage()) {
       console.log('[Content Script] Starting TradingView DOM observer...');
@@ -86,10 +89,13 @@ async function initialize(): Promise<void> {
       console.warn('[Content Script] Failed to notify background script:', error);
     }
 
-    // Perform initial analysis after a short delay
+    // Trigger initial analysis after a short delay. The TradingView observer's
+    // own dedup (captureBaseline → compare) won't fire on the first poll because
+    // baseline matches current values. Without this call, the user would need to
+    // manually click Analyze or wait 60s for the periodic interval.
     setTimeout(() => {
       requestAnalysisIfNeeded();
-    }, 3000);
+    }, 4000);
   } catch (error) {
     console.error('[Content Script] Failed to initialize content script:', error);
     chartOverlay = null;
@@ -352,48 +358,83 @@ function setupPeriodicAnalysis(): void {
 }
 
 // Initialize when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-      initialize();
-    }, 500);
-  });
-} else {
-  setTimeout(() => {
-    initialize();
-  }, 1000);
+function domReadyInit(): void {
+  // initialize() will call setupSpaObserver() internally
+  initialize();
 }
 
-// Also initialize when DOM content is loaded (backup)
-// This ensures initialization even if the script runs before DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    initialize();
-  }, 500);
-});
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(domReadyInit, 500);
+  });
+} else {
+  // DOM already loaded — initialize immediately after a short delay
+  // to allow other page scripts to settle
+  setTimeout(domReadyInit, 1000);
+}
 
 // Handle SPA (Single Page Application) route changes
+// Uses a single MutationObserver that debounces URL changes.
+// Store observer reference so it can be cleaned up on SPA re-init.
 let lastUrl = location.href;
-new MutationObserver(() => {
-  const url = location.href;
-  if (url !== lastUrl) {
-    lastUrl = url;
-    // Re-initialize for new page state
-    const wasInitialized = isInitialized;
-    isInitialized = false;
-    if (chartOverlay) {
-      chartOverlay.destroy();
-      chartOverlay = null;
-    }
-    if (tvObserver) {
-      tvObserver.stop();
-      tvObserver = null;
-    }
-    setTimeout(() => {
-      initialize();
-    }, 1000);
+let spaDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let spaObserver: MutationObserver | null = null;
+
+function setupSpaObserver(): void {
+  // Disconnect any existing SPA observer before creating a new one
+  if (spaObserver) {
+    spaObserver.disconnect();
+    spaObserver = null;
   }
-}).observe(document.body, { childList: true, subtree: true });
+
+  // Reset url tracking
+  lastUrl = location.href;
+
+  spaObserver = new MutationObserver(() => {
+    const url = location.href;
+    if (url !== lastUrl) {
+      lastUrl = url;
+      // Debounce: wait 500ms after last URL change before re-initializing
+      if (spaDebounceTimer) clearTimeout(spaDebounceTimer);
+      spaDebounceTimer = setTimeout(() => {
+        // Clean up old state
+        isInitialized = false;
+        isInitializing = false;
+        if (chartOverlay) {
+          chartOverlay.destroy();
+          chartOverlay = null;
+        }
+        if (tvObserver) {
+          tvObserver.stop();
+          tvObserver = null;
+        }
+        spaLegacyIconCleanup();
+        // Disconnect and re-create SPA observer after cleanup
+        if (spaObserver) {
+          spaObserver.disconnect();
+          spaObserver = null;
+        }
+        // Re-initialize for new page state (setupSpaObserver will be called by initialize)
+        initialize();
+      }, 500);
+    }
+  });
+
+  // Use a lightweight observer config — only watch body's child list for URL changes
+  // Subtree is needed to catch SPA navigation events that don't change body's children
+  spaObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+// Call setupSpaObserver after DOM is ready (alongside the main initialize call)
+// The observer will be created once the content script first runs.
+
+/**
+ * Clean up any stale overlay icon elements that may remain in the DOM
+ * from a previous page load or SPA navigation.
+ */
+function spaLegacyIconCleanup(): void {
+  document.querySelectorAll('#trading-copilot-overlay, [id^="trading-copilot-"], .trading-copilot-icon').forEach(el => el.remove());
+}
 
 // Handle visibility change (tab switching)
 document.addEventListener('visibilitychange', () => {

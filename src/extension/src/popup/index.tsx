@@ -1,15 +1,17 @@
 /**
- * Premium Popup Dashboard for AI Trading Copilot
- * Displays current analysis, history, watchlist, stats, and one-click analyze.
+ * TradingAI Terminal — Professional Edition Popup
+ * Bloomberg/Terminal-inspired UI for AI Trading Copilot
  */
 
-import { parseApiError, getPasswordRequirements, isPasswordValid, PasswordRequirement } from '../api/error-parser';
+import { parseApiError, getPasswordRequirements } from '../api/error-parser';
 
 let currentRecommendation: string = 'HOLD';
 let currentConfidence: number = 0;
 let currentAnalysisResult: any = null;
+let currentChartSymbol: string | null = null;
+let currentChartTimeframe: string | null = null;
 
-// Import analysis response validation
+// ── Validation ──
 function validateAnalysisResponse(r: any): string[] {
   const errors: string[] = [];
   if (!r || typeof r !== 'object') { errors.push('root: not an object'); return errors; }
@@ -32,202 +34,175 @@ function validateAnalysisResponse(r: any): string[] {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  const mainContent = document.getElementById('main-content')!;
-  const loadingState = document.getElementById('loading-state')!;
+  // ── DOM Elements ──
+  const loadingScreen = document.getElementById('loading-screen')!;
   const loginPrompt = document.getElementById('login-prompt')!;
   const dashboard = document.getElementById('dashboard')!;
   const loginError = document.getElementById('login-error')!;
 
-  // Get elements
-  const statusDot = document.getElementById('status-dot')!;
-  const statusText = document.getElementById('status-text')!;
-  const analyzeBtn = document.getElementById('analyze-btn') as HTMLButtonElement;
-  const settingsBtn = document.getElementById('settings-btn')!;
-  const journalBtn = document.getElementById('journal-btn')!;
-  const refreshBtn = document.getElementById('refresh-btn')!;
-  const themeToggle = document.getElementById('theme-toggle')!;
-  const loginBtn = document.getElementById('login-btn')!;
-  const loginEmail = document.getElementById('login-email') as HTMLInputElement;
-  const loginPassword = document.getElementById('login-password') as HTMLInputElement;
-  const viewAllBtn = document.getElementById('view-all-btn')!;
+  // Header
+  const connDot = document.getElementById('conn-dot')!;
+  const connText = document.getElementById('conn-text')!;
 
-  // Current analysis elements
-  const currentSymbol = document.getElementById('current-symbol')!;
-  const currentTimeframe = document.getElementById('current-timeframe')!;
-  const currentRec = document.getElementById('current-rec')!;
-  const currentPrice = document.getElementById('current-price')!;
-  const currentConf = document.getElementById('current-confidence')!;
-  const confidenceFill = document.getElementById('confidence-fill')!;
-  const tradeSetupContainer = document.getElementById('trade-setup-container')!;
-  const reasoningText = document.getElementById('reasoning-text')!;
-  const entryPrice = document.getElementById('entry-price')!;
-  const stopLoss = document.getElementById('stop-loss')!;
-  const takeProfit = document.getElementById('take-profit')!;
-  const riskReward = document.getElementById('risk-reward')!;
+  // Symbol bar
+  const symTicker = document.getElementById('sym-ticker')!;
+  const symTf = document.getElementById('sym-tf')!;
+  const symExch = document.getElementById('sym-exch')!;
+  const symPrice = document.getElementById('sym-price')!;
 
-  // Stats elements
-  const statAnalysesToday = document.getElementById('stat-analyses-today')!;
-  const statWinRate = document.getElementById('stat-win-rate')!;
-  const statAvgConf = document.getElementById('stat-avg-conf')!;
+  // Signal panel
+  const signalPanel = document.getElementById('signal-panel')!;
+  const signalBg = document.getElementById('signal-bg')!;
+  const sigRec = document.getElementById('sig-rec')!;
+  const confFill = document.getElementById('conf-fill')!;
+  const confLabel = document.getElementById('conf-label')!;
 
-  // History & Watchlist
+  // Trade setup
+  const tradeSetupPanel = document.getElementById('trade-setup-panel')!;
+  const tradeEntry = document.getElementById('trade-entry')!;
+  const tradeSl = document.getElementById('trade-sl')!;
+  const tradeTp = document.getElementById('trade-tp')!;
+  const tradeRr = document.getElementById('trade-rr')!;
+
+  // Reasoning
+  const reasoningPanel = document.getElementById('reasoning-panel')!;
+  const reasoningBox = document.getElementById('reasoning-box')!;
+
+  // Stats
+  const statToday = document.getElementById('stat-today')!;
+  const statWinrate = document.getElementById('stat-winrate')!;
+  const statAvgconf = document.getElementById('stat-avgconf')!;
+
+  // History & tabs
   const historyList = document.getElementById('history-list')!;
   const watchlistList = document.getElementById('watchlist-list')!;
   const tabRecent = document.getElementById('tab-recent')!;
   const tabWatchlist = document.getElementById('tab-watchlist')!;
 
-  // ── Initialize state ──
+  // Actions
+  const analyzeBtn = document.getElementById('analyze-btn') as HTMLButtonElement;
+  const settingsBtn = document.getElementById('settings-btn')!;
+
+  // Login
+  const loginBtn = document.getElementById('login-btn')!;
+  const loginEmail = document.getElementById('login-email') as HTMLInputElement;
+  const loginPassword = document.getElementById('login-password') as HTMLInputElement;
+
+  // Password requirements
+  const pwReqs = document.getElementById('pw-reqs')!;
+  const pwReqLength = document.getElementById('pw-req-length')!;
+  const pwReqUpper = document.getElementById('pw-req-upper')!;
+  const pwReqLower = document.getElementById('pw-req-lower')!;
+  const pwReqNumber = document.getElementById('pw-req-number')!;
+
+  // Status bar
+  const statusPlatform = document.getElementById('status-platform')!;
+  const statusTime = document.getElementById('status-time')!;
+
+  // ── Initialize ──
   async function initialize() {
     try {
-      loadingState.style.display = 'flex';
+      loadingScreen.classList.remove('section-hidden');
       loginPrompt.classList.add('section-hidden');
       dashboard.classList.add('section-hidden');
 
-      // Check backend connection
       const response = await sendMessage({ type: 'GET_BACKEND_STATUS' });
       const auth = response as any;
 
       if (auth?.authenticated) {
-        // ── Bug 1 fix: Update status badge immediately on auth check ──
-        statusDot.className = 'status-dot online';
-        statusText.textContent = 'Connected';
-
+        setConnected(true);
         dashboard.classList.remove('section-hidden');
-
-        // ── Bug 1 fix: Fetch current chart info immediately ──
         fetchChartInfo();
-
         await refreshDashboard();
+        startClock();
       } else {
         loginPrompt.classList.remove('section-hidden');
       }
     } catch {
       loginPrompt.classList.remove('section-hidden');
     } finally {
-      loadingState.style.display = 'none';
+      loadingScreen.classList.add('section-hidden');
     }
-
-    // NOTE: Do NOT load cached lastAnalysisResult from storage.
-    // The TradingView chart is the single source of truth.
-    // Stale data from a previous symbol should never be displayed.
-    // Only updateCurrentAnalysis() from a LIVE analysis request is valid.
   }
 
-  // ── Store current symbol/timeframe from chart info (Bug 2 fix) ──
-  let currentChartSymbol: string | null = null;
-  let currentChartTimeframe: string | null = null;
+  // ── Connection ──
+  function setConnected(connected: boolean): void {
+    connDot.className = 'conn-dot ' + (connected ? 'online' : 'offline');
+    connText.textContent = connected ? 'CONNECTED' : 'OFFLINE';
+    statusPlatform.innerHTML = connected
+      ? '<span class="dot online"></span> Connected'
+      : '<span class="dot offline"></span> Disconnected';
+  }
 
-  // ── Fetch current chart symbol/timeframe from TradingView ──
-  // The TradingView chart is the SINGLE SOURCE OF TRUTH.
-  // Every UI element must reflect the currently open chart.
+  // ── Clock ──
+  let clockInterval: number | null = null;
+  function startClock(): void {
+    function tick() {
+      const now = new Date();
+      statusTime.textContent = now.toLocaleTimeString('en-US', { hour12: false });
+    }
+    tick();
+    if (clockInterval) clearInterval(clockInterval);
+    clockInterval = window.setInterval(tick, 1000);
+  }
+
+  // ── Fetch Chart Info ──
   async function fetchChartInfo(): Promise<void> {
     try {
       const response = await sendMessage({ type: 'GET_CHART_INFO' });
       if (response && response.symbol) {
-        // Store for fallback analysis (Bug 2 fix)
         currentChartSymbol = response.symbol;
         currentChartTimeframe = response.timeframe || null;
-        currentSymbol.textContent = response.symbol;
-        if (response.timeframe) {
-          currentTimeframe.textContent = response.timeframe;
-        }
-        if (response.price) {
-          currentPrice.textContent = formatPrice(response.price);
-        }
+        symTicker.textContent = response.symbol;
+        if (response.timeframe) symTf.textContent = response.timeframe;
+        if (response.price) symPrice.textContent = formatPrice(response.price);
 
-        // Clear stale analysis from popup if this is a different symbol
         if (currentAnalysisResult && currentAnalysisResult.symbol !== response.symbol) {
-          console.log('[Popup] Symbol changed from', currentAnalysisResult.symbol, 'to', response.symbol, '— clearing stale analysis');
           clearCurrentAnalysis();
         }
-
-        // Update analyze button with current symbol
         updateAnalyzeButton(currentChartSymbol, currentChartTimeframe);
-
-        console.log('[Popup] Chart info fetched:', response.symbol, response.timeframe);
       } else {
-        // Chart could not be detected — show clear message instead of falling back
-        console.log('[Popup] No chart info returned from content script');
-        currentSymbol.textContent = '🚫 Chart not detected';
-        currentTimeframe.textContent = '---';
-        currentChartSymbol = null;
-        currentChartTimeframe = null;
-        updateAnalyzeButton(null, null);
+        setNoChart();
       }
-    } catch (error) {
-      // Chart info fetch failed — content script may not be loaded
-      console.log('[Popup] Could not fetch chart info (content script may not be loaded):', error);
-      currentSymbol.textContent = '🚫 Chart not detected';
-      currentTimeframe.textContent = '---';
-      currentChartSymbol = null;
-      currentChartTimeframe = null;
-      updateAnalyzeButton(null, null);
+    } catch {
+      setNoChart();
     }
   }
 
-  // ── Dashboard refresh ──
+  function setNoChart(): void {
+    symTicker.textContent = '---';
+    symTicker.classList.add('dim');
+    symTf.textContent = '---';
+    symPrice.textContent = '---';
+    symPrice.classList.add('dim');
+    currentChartSymbol = null;
+    currentChartTimeframe = null;
+    updateAnalyzeButton(null, null);
+  }
+
+  // ── Dashboard Refresh ──
   async function refreshDashboard() {
     try {
-      // Get analysis stats
-      const statsResponse = await sendMessage({ type: 'GET_BACKEND_STATUS' });
-      const stats = (statsResponse as any)?.stats;
-
+      const statsRes = await sendMessage({ type: 'GET_BACKEND_STATUS' });
+      const stats = (statsRes as any)?.stats;
       if (stats) {
-        statAnalysesToday.textContent = String(stats.totalAnalyses || stats.total || 0);
+        statToday.textContent = String(stats.totalAnalyses || stats.total || 0);
         const winRate = stats.winRate ?? stats.winrate;
-        statWinRate.textContent = winRate != null ? `${Math.round(winRate * 100)}%` : '--%';
+        statWinrate.textContent = winRate != null ? `${Math.round(winRate * 100)}%` : '--%';
         const avgConf = stats.avgConfidence ?? stats.averageconfidence;
-        statAvgConf.textContent = avgConf != null ? `${Math.round(avgConf)}%` : '--%';
+        statAvgconf.textContent = avgConf != null ? `${Math.round(avgConf)}%` : '--%';
       }
-
-      // Get recent analyses
-      try {
-        const analysesResponse = await sendMessage({
-          type: 'ANALYSIS_FETCH_REQUEST',
-          payload: { limit: 5, sort: 'createdAt:DESC' },
-        });
-        // This needs a proxy in background to call the API
-        // For now, show locally stored history
-      } catch { /* background may not have this handler yet */ }
-    } catch (error) {
-      console.warn('[Popup] Refresh failed:', error);
-    }
+    } catch { /* non-critical */ }
   }
 
-  // ── Update current analysis display ──
+  // ── Update Analysis ──
   function updateCurrentAnalysis(result: any) {
-    // Validate critical fields; log any issues before processing
-    if (!result) {
-      console.warn('[Popup] updateCurrentAnalysis: result is null/undefined');
-      return;
-    }
-
-    console.log('[Popup] RAW analysis result:', JSON.stringify(result, null, 2));
-
-    // Run structural validation
-    const validationErrors = validateAnalysisResponse(result);
-    if (validationErrors.length > 0) {
-      console.warn('[Popup] Analysis response validation FAILED:', validationErrors);
-    } else {
-      console.log('[Popup] Analysis response validation PASSED');
-    }
-
-    console.log('[Popup] updateCurrentAnalysis processed:', {
+    if (!result) return;
+    console.log('[Popup] Analysis result:', {
+      symbol: result.symbol,
       recommendation: result.recommendation,
       confidence: result.confidence,
-      hasEngines: !!result.engines,
-      hasTradePlan: !!(result.engines?.tradePlanning?.tradeSetup),
-      symbol: result.symbol,
-      timeframe: result.timeframe
     });
-
-    // Validate analysis response structure
-    if (!result.recommendation) {
-      console.warn('[Popup] updateCurrentAnalysis: missing recommendation');
-    }
-    if (typeof result.confidence !== 'number' || !Number.isFinite(result.confidence)) {
-      console.warn('[Popup] updateCurrentAnalysis: confidence is not a finite number:', result.confidence);
-    }
 
     currentAnalysisResult = result;
     currentRecommendation = result.recommendation || 'HOLD';
@@ -237,161 +212,138 @@ document.addEventListener('DOMContentLoaded', () => {
     const timeframe = result.timeframe || '---';
     const price = result.currentPrice ?? result.engines?.technical?.indicators?.atr;
 
-    currentSymbol.textContent = symbol;
-    currentTimeframe.textContent = timeframe;
-    currentPrice.textContent = price ? formatPrice(price) : '---';
-    currentConf.textContent = `${Math.round(currentConfidence)}%`;
+    symTicker.textContent = symbol;
+    symTicker.classList.remove('dim');
+    symTf.textContent = timeframe;
+    symPrice.textContent = formatPrice(price);
+    symPrice.classList.remove('dim');
 
-    // Recommendation badge
+    // Signal recommendation
     const recClass = getRecClass(currentRecommendation);
-    currentRec.textContent = currentRecommendation;
-    currentRec.className = `recommendation-badge ${recClass}`;
+    sigRec.textContent = currentRecommendation;
+    sigRec.className = 'signal-recommendation ' + recClass;
+    signalBg.className = 'signal-bg ' + recClass;
 
-    // Confidence bar
-    const fill = confidenceFill as HTMLElement;
-    fill.style.width = `${Math.round(currentConfidence)}%`;
-    fill.className = `confidence-fill ${recClass}`;
+    // Confidence
+    confFill.style.width = `${Math.round(currentConfidence)}%`;
+    confFill.className = 'conf-fill ' + recClass;
+    confLabel.textContent = `${Math.round(currentConfidence)}%`;
+    confLabel.className = 'conf-label ' + recClass;
 
     // Trade setup
     const tradePlan = result.engines?.tradePlanning?.tradeSetup;
     if (tradePlan && isValidTradeSetup(tradePlan)) {
-      tradeSetupContainer.classList.remove('section-hidden');
-      entryPrice.textContent = formatPrice(tradePlan.entryPrice);
-      stopLoss.textContent = formatPrice(tradePlan.stopLoss);
-      takeProfit.textContent = formatPrice(tradePlan.takeProfit);
+      tradeSetupPanel.classList.remove('section-hidden');
+      tradeEntry.textContent = formatPrice(tradePlan.entryPrice);
+      tradeEntry.className = 'trade-cell-value muted';
+      tradeSl.textContent = formatPrice(tradePlan.stopLoss);
+      tradeSl.className = 'trade-cell-value sell';
+      tradeTp.textContent = formatPrice(tradePlan.takeProfit);
+      tradeTp.className = 'trade-cell-value buy';
       const rr = tradePlan.riskRewardRatio;
-      riskReward.textContent = typeof rr === 'number' && Number.isFinite(rr)
-        ? `${rr.toFixed(2)}:1`
-        : '---';
+      tradeRr.textContent = typeof rr === 'number' && Number.isFinite(rr) ? `${rr.toFixed(2)}:1` : '---';
+      tradeRr.className = 'trade-cell-value hold';
     } else {
-      tradeSetupContainer.classList.add('section-hidden');
+      tradeSetupPanel.classList.add('section-hidden');
     }
 
     // Reasoning
-    reasoningText.textContent = result.reasoning || 'No reasoning available.';
-    reasoningText.title = result.reasoning || '';
-    reasoningText.classList.remove('expanded');
-
-    // Toggle expand on click
-    reasoningText.onclick = () => {
-      reasoningText.classList.toggle('expanded');
+    reasoningPanel.classList.remove('section-hidden');
+    reasoningBox.textContent = result.reasoning || 'No reasoning available.';
+    reasoningBox.className = 'reasoning-box';
+    reasoningBox.classList.remove('expanded');
+    reasoningBox.onclick = () => {
+      reasoningBox.classList.toggle('expanded');
+      reasoningBox.style.maxHeight = reasoningBox.classList.contains('expanded') ? 'none' : '52px';
     };
 
-    // Save to local storage
+    // Save
     chrome.storage.local.set({ lastAnalysisResult: result });
   }
 
-  // ── Analyze button ──
+  // ── Clear Analysis ──
+  function clearCurrentAnalysis(): void {
+    currentAnalysisResult = null;
+    currentRecommendation = 'HOLD';
+    currentConfidence = 0;
+    sigRec.textContent = 'HOLD';
+    sigRec.className = 'signal-recommendation hold';
+    signalBg.className = 'signal-bg hold';
+    confFill.style.width = '0%';
+    confFill.className = 'conf-fill hold';
+    confLabel.textContent = '0%';
+    confLabel.className = 'conf-label hold';
+    tradeSetupPanel.classList.add('section-hidden');
+    reasoningPanel.classList.add('section-hidden');
+  }
+
+  // ── Analyze Button ──
+  function updateAnalyzeButton(symbol: string | null, timeframe: string | null): void {
+    if (symbol && timeframe) {
+      analyzeBtn.textContent = `⚡ ANALYZE ${symbol} (${timeframe})`;
+      analyzeBtn.className = 'analyze-btn ready';
+      analyzeBtn.title = '';
+    } else if (symbol) {
+      analyzeBtn.textContent = `⚡ ANALYZE ${symbol}`;
+      analyzeBtn.className = 'analyze-btn ready';
+      analyzeBtn.title = '';
+    } else {
+      analyzeBtn.textContent = '⚠ NO CHART DETECTED';
+      analyzeBtn.className = 'analyze-btn error';
+      analyzeBtn.title = 'Open a supported trading chart first';
+    }
+  }
+
+  function resetAnalyzeBtn(): void {
+    (analyzeBtn as HTMLButtonElement).disabled = false;
+    setConnected(true);
+    updateAnalyzeButton(currentChartSymbol, currentChartTimeframe);
+  }
+
   analyzeBtn.addEventListener('click', async () => {
     (analyzeBtn as HTMLButtonElement).disabled = true;
-    analyzeBtn.textContent = '⏳ Analyzing...';
-    statusDot.className = 'status-dot analyzing';
-    statusText.textContent = 'Analyzing...';
+    analyzeBtn.textContent = '⏳ ANALYZING...';
+    analyzeBtn.className = 'analyze-btn analyzing';
+    connDot.className = 'conn-dot analyzing';
+    connText.textContent = 'ANALYZING...';
 
     try {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs[0]?.id) {
           chrome.tabs.sendMessage(tabs[0].id, { type: 'REQUEST_ANALYSIS' }, (response) => {
             if (chrome.runtime.lastError) {
-              // ── Bug 2 fix: Include current symbol in fallback payload ──
-              // NEVER hardcode BTC — use the symbol we fetched on popup open
-              const fallbackPayload: any = { force: true };
-              if (currentChartSymbol) {
-                fallbackPayload.symbol = currentChartSymbol;
-              }
-              if (currentChartTimeframe) {
-                fallbackPayload.timeframe = currentChartTimeframe;
-              }
-              fallbackPayload.platform = 'tradingview';
-
-              sendMessage({ type: 'REQUEST_ANALYSIS', payload: fallbackPayload })
-                .then((result: any) => {
-                  if (result && (result as any).recommendation) {
-                    updateCurrentAnalysis(result);
-                  }
-                })
-                .catch((err) => console.warn('[Popup] Analysis fallback failed:', err))
-                .finally(() => resetAnalyzeBtn());
+              sendFallbackAnalysis();
             } else {
               resetAnalyzeBtn();
             }
           });
         } else {
-          // ── Bug 2 fix: Include current symbol in fallback payload ──
-          const fallbackPayload: any = { force: true };
-          if (currentChartSymbol) {
-            fallbackPayload.symbol = currentChartSymbol;
-          }
-          if (currentChartTimeframe) {
-            fallbackPayload.timeframe = currentChartTimeframe;
-          }
-          fallbackPayload.platform = 'tradingview';
-
-          sendMessage({ type: 'REQUEST_ANALYSIS', payload: fallbackPayload })
-            .then((result: any) => {
-              if (result?.recommendation) updateCurrentAnalysis(result);
-            })
-            .finally(() => resetAnalyzeBtn());
+          sendFallbackAnalysis();
         }
       });
-    } catch (error) {
-      console.warn('[Popup] Analysis error:', error);
+    } catch {
       resetAnalyzeBtn();
     }
   });
 
-  /**
-   * Update the analyze button text to show the current chart symbol and timeframe.
-   * If chart is not detected, show a clear message.
-   */
-  function updateAnalyzeButton(symbol: string | null, timeframe: string | null): void {
-    if (symbol && timeframe) {
-      analyzeBtn.textContent = `⚡ Analyze ${symbol} (${timeframe})`;
-    } else if (symbol) {
-      analyzeBtn.textContent = `⚡ Analyze ${symbol}`;
-    } else {
-      analyzeBtn.textContent = '🚫 Unable to detect chart';
-      analyzeBtn.title = 'Open a supported trading chart (TradingView, Binance, etc.)';
-    }
+  function sendFallbackAnalysis(): void {
+    const payload: any = { force: true };
+    if (currentChartSymbol) payload.symbol = currentChartSymbol;
+    if (currentChartTimeframe) payload.timeframe = currentChartTimeframe;
+    payload.platform = 'tradingview';
+
+    sendMessage({ type: 'REQUEST_ANALYSIS', payload })
+      .then((result: any) => {
+        if (result?.recommendation) updateCurrentAnalysis(result);
+      })
+      .catch(() => { /* fallback failed */ })
+      .finally(() => resetAnalyzeBtn());
   }
 
-  /**
-   * Clear all analysis display elements back to their default state.
-   * Called when symbol changes or when a fresh popup opens.
-   */
-  function clearCurrentAnalysis(): void {
-    currentAnalysisResult = null;
-    currentRecommendation = 'HOLD';
-    currentConfidence = 0;
-    currentRec.textContent = 'HOLD';
-    currentRec.className = 'recommendation-badge hold';
-    currentConf.textContent = '0%';
-    (confidenceFill as HTMLElement).style.width = '0%';
-    (confidenceFill as HTMLElement).className = 'confidence-fill hold';
-    tradeSetupContainer.classList.add('section-hidden');
-    reasoningText.textContent = 'No analysis yet. Click the button above to start.';
-  }
+  // ── Password Requirements ──
+  let pwTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function resetAnalyzeBtn(): void {
-    (analyzeBtn as HTMLButtonElement).disabled = false;
-    statusDot.className = 'status-dot online';
-    statusText.textContent = 'Connected';
-
-    // Restore button to show current chart info
-    updateAnalyzeButton(currentChartSymbol, currentChartTimeframe);
-  }
-
-  // ── Password Requirements (live validation) ──
-  const passwordInput = loginPassword;
-  const pwReqContainer = document.getElementById('password-requirements')!;
-  const pwReqLength = document.getElementById('pw-req-length')!;
-  const pwReqUpper = document.getElementById('pw-req-upper')!;
-  const pwReqLower = document.getElementById('pw-req-lower')!;
-  const pwReqNumber = document.getElementById('pw-req-number')!;
-
-  let pwValidationTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function updatePasswordRequirements(password: string): void {
+  function updatePwReqs(password: string): void {
     const reqs = getPasswordRequirements(password);
     const elements = [pwReqLength, pwReqUpper, pwReqLower, pwReqNumber];
     reqs.forEach((req, i) => {
@@ -400,52 +352,38 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  passwordInput.addEventListener('focus', () => {
-    if (passwordInput.value.length > 0) {
-      pwReqContainer.style.display = 'block';
-      updatePasswordRequirements(passwordInput.value);
+  loginPassword.addEventListener('focus', () => {
+    if (loginPassword.value.length > 0) {
+      pwReqs.style.display = 'block';
+      updatePwReqs(loginPassword.value);
     }
   });
-
-  passwordInput.addEventListener('blur', () => {
-    // Keep visible if there's a value
-    if (!passwordInput.value) {
-      pwReqContainer.style.display = 'none';
-    }
+  loginPassword.addEventListener('blur', () => {
+    if (!loginPassword.value) pwReqs.style.display = 'none';
   });
-
-  passwordInput.addEventListener('input', () => {
-    const password = passwordInput.value;
-    if (password.length > 0) {
-      pwReqContainer.style.display = 'block';
-      // Debounce live validation
-      if (pwValidationTimer) clearTimeout(pwValidationTimer);
-      pwValidationTimer = setTimeout(() => {
-        updatePasswordRequirements(password);
-      }, 100);
+  loginPassword.addEventListener('input', () => {
+    const pw = loginPassword.value;
+    if (pw.length > 0) {
+      pwReqs.style.display = 'block';
+      if (pwTimer) clearTimeout(pwTimer);
+      pwTimer = setTimeout(() => updatePwReqs(pw), 100);
     } else {
-      pwReqContainer.style.display = 'none';
+      pwReqs.style.display = 'none';
     }
   });
 
   // ── Login ──
-  function showLoginError(error: unknown): void {
-    const parsed = parseApiError(error);
-    loginError.textContent = parsed.message;
-    loginError.style.display = 'block';
-  }
-
   loginBtn.addEventListener('click', async () => {
     const email = loginEmail.value.trim();
     const password = loginPassword.value.trim();
 
     if (!email || !password) {
-      showLoginError({ message: 'Email and password are required.', isKnown: true });
+      showLoginError('Email and password are required.');
       return;
     }
 
     (loginBtn as HTMLButtonElement).disabled = true;
-    loginBtn.textContent = 'Connecting...';
+    loginBtn.textContent = 'CONNECTING...';
     loginError.style.display = 'none';
 
     try {
@@ -455,17 +393,12 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       if ((result as any)?.success) {
-        // ── Bug 1 fix: Update status badge immediately on login success ──
-        statusDot.className = 'status-dot online';
-        statusText.textContent = 'Connected';
-
+        setConnected(true);
         loginPrompt.classList.add('section-hidden');
         dashboard.classList.remove('section-hidden');
-
-        // ── Bug 1 fix: Fetch current chart info immediately ──
         fetchChartInfo();
-
         await refreshDashboard();
+        startClock();
       } else {
         showLoginError((result as any)?.error || 'Login failed');
       }
@@ -473,95 +406,75 @@ document.addEventListener('DOMContentLoaded', () => {
       showLoginError(error);
     } finally {
       (loginBtn as HTMLButtonElement).disabled = false;
-      loginBtn.textContent = 'Login / Register';
+      loginBtn.textContent = 'SIGN IN / REGISTER';
     }
   });
 
-  // ── Tabs ──
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
+  function showLoginError(error: unknown): void {
+    const parsed = parseApiError(error);
+    loginError.textContent = parsed.message;
+    loginError.style.display = 'block';
+  }
 
+  // ── Tabs ──
+  document.querySelectorAll('.tab-item').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
       const tabName = (tab as HTMLElement).dataset.tab;
       tabRecent.classList.toggle('section-hidden', tabName !== 'recent');
       tabWatchlist.classList.toggle('section-hidden', tabName !== 'watchlist');
     });
   });
 
-  // ── Footer buttons ──
+  // ── Settings ──
   settingsBtn.addEventListener('click', () => {
     const optPage = chrome.runtime.openOptionsPage;
-    if (optPage) {
-      optPage();
-    } else {
-      window.open(chrome.runtime.getURL('options.html'));
-    }
+    if (optPage) optPage();
+    else window.open(chrome.runtime.getURL('options.html'));
   });
 
-  journalBtn.addEventListener('click', () => {
-    const optPage = chrome.runtime.openOptionsPage;
-    if (optPage) {
-      optPage();
-    } else {
-      window.open(chrome.runtime.getURL('options.html'));
-    }
-  });
-
-  refreshBtn.addEventListener('click', () => { refreshDashboard(); });
-
-  viewAllBtn.addEventListener('click', () => {
-    const optPage = chrome.runtime.openOptionsPage;
-    if (optPage) {
-      optPage();
-    } else {
-      window.open(chrome.runtime.getURL('options.html'));
-    }
-  });
-
-  themeToggle.addEventListener('click', () => {
-    document.body.style.filter = document.body.style.filter === 'invert(1)' ? 'none' : 'invert(1)';
-  });
-
-  // ── Message listener from background ──
+  // ── Message Listener ──
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'ANALYSIS_UPDATE' && message.data) {
       updateCurrentAnalysis(message.data);
       sendResponse({ success: true });
     }
     if (message.type === 'ANALYSIS_ERROR') {
-      statusDot.className = 'status-dot offline';
-      statusText.textContent = 'Analysis failed';
+      connDot.className = 'conn-dot offline';
+      connText.textContent = 'ERROR';
       resetAnalyzeBtn();
       sendResponse({ success: true });
     }
     return true;
   });
 
-  // ── Initialize ──
+  // ── Keyboard shortcut ──
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      analyzeBtn.click();
+    }
+  });
+
+  // ── Init ──
   initialize();
 
-  // ── Utility functions ──
+  // ── Utilities ──
   function sendMessage(message: any): Promise<any> {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(response);
-        }
+        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+        else resolve(response);
       });
     });
   }
 
   function isValidTradeSetup(setup: any): boolean {
-    return (
-      setup &&
-      typeof setup === 'object' &&
+    return setup && typeof setup === 'object' &&
       typeof setup.entryPrice === 'number' && Number.isFinite(setup.entryPrice) &&
       typeof setup.stopLoss === 'number' && Number.isFinite(setup.stopLoss) &&
-      typeof setup.takeProfit === 'number' && Number.isFinite(setup.takeProfit)
-    );
+      typeof setup.takeProfit === 'number' && Number.isFinite(setup.takeProfit);
   }
 
   function formatPrice(price: number): string {

@@ -15,62 +15,73 @@ let analysisOrchestrator: AnalysisOrchestrator | null = null;
 let isInitialized = false;
 
 // Initialize everything when the service worker starts
+// Maximum initialization retries to handle transient storage failures
+const MAX_INIT_RETRIES = 3;
+const INIT_RETRY_DELAY_MS = 2000;
+
 async function initialize(): Promise<boolean> {
-  try {
-    // Create managers
-    storage = new StorageManager();
-    alarmManager = new AlarmManager();
-    analysisOrchestrator = new AnalysisOrchestrator();
-
-    // Load backend URL from storage (defaults to production Render URL)
+  for (let attempt = 1; attempt <= MAX_INIT_RETRIES; attempt++) {
     try {
-      const backendUrl = await getBackendUrl();
-      tradingCopilotApi.setBaseUrl(backendUrl);
-      console.log('[Background] Backend URL configured:', backendUrl);
-    } catch {
-      console.log('[Background] Using default backend URL');
-    }
+      // Create managers
+      storage = new StorageManager();
+      alarmManager = new AlarmManager();
+      analysisOrchestrator = new AnalysisOrchestrator();
 
-    // Restore tokens from storage if available
-    try {
-      const auth = await storage.get('backendAuth');
-      if (auth?.jwtToken) {
-        tradingCopilotApi.setJwtToken(auth.jwtToken);
-        console.log('[Background] JWT token restored from storage');
+      // Load backend URL from storage (defaults to production Render URL)
+      try {
+        const backendUrl = await getBackendUrl();
+        tradingCopilotApi.setBaseUrl(backendUrl);
+        console.log('[Background] Backend URL configured:', backendUrl);
+      } catch {
+        console.log('[Background] Using default backend URL');
       }
-      if (auth?.refreshToken) {
-        tradingCopilotApi.setRefreshToken(auth.refreshToken);
-        console.log('[Background] Refresh token restored from storage');
+
+      // Restore tokens from storage if available
+      try {
+        const auth = await storage.get('backendAuth');
+        if (auth?.jwtToken) {
+          tradingCopilotApi.setJwtToken(auth.jwtToken);
+          console.log('[Background] JWT token restored from storage');
+        }
+        if (auth?.refreshToken) {
+          tradingCopilotApi.setRefreshToken(auth.refreshToken);
+          console.log('[Background] Refresh token restored from storage');
+        }
+      } catch {
+        // Non-critical - user can re-login
       }
-    } catch {
-      // Non-critical - user can re-login
-    }
 
-    // Attempt silent re-auth if we have a refresh token
-    if (tradingCopilotApi.getRefreshToken()) {
-      silentReAuth().catch(() => {
-        // Silent re-auth failed — user may need to log in again
+      // Attempt silent re-auth if we have a refresh token
+      if (tradingCopilotApi.getRefreshToken()) {
+        silentReAuth().catch(() => {
+          // Silent re-auth failed — user may need to log in again
+        });
+      }
+
+      // Register callback for when token refresh fails
+      tradingCopilotApi.setOnRefreshFailed(() => {
+        console.log('[Background] Token refresh failed — clearing stored auth');
+        storage?.remove('backendAuth').catch(() => {});
+        // Notify popup if open
+        chrome.runtime.sendMessage({ type: 'AUTH_EXPIRED' }, () => {
+          if (chrome.runtime.lastError) { /* popup closed — ignore */ }
+        });
       });
+
+      console.log('[Background] Service initialized');
+      isInitialized = true;
+      return true;
+    } catch (error) {
+      console.error(`[Background] Failed to initialize (attempt ${attempt}/${MAX_INIT_RETRIES}):`, error);
+      isInitialized = false;
+      if (attempt < MAX_INIT_RETRIES) {
+        // Wait before retrying — MV3 service worker may still be starting up
+        await new Promise(r => setTimeout(r, INIT_RETRY_DELAY_MS));
+      }
     }
-
-    // Register callback for when token refresh fails
-    tradingCopilotApi.setOnRefreshFailed(() => {
-      console.log('[Background] Token refresh failed — clearing stored auth');
-      storage?.remove('backendAuth').catch(() => {});
-      // Notify popup if open
-      chrome.runtime.sendMessage({ type: 'AUTH_EXPIRED' }, () => {
-        if (chrome.runtime.lastError) { /* popup closed — ignore */ }
-      });
-    });
-
-    console.log('[Background] Service initialized');
-    isInitialized = true;
-    return true;
-  } catch (error) {
-    console.error('[Background] Failed to initialize background service:', error);
-    isInitialized = false;
-    return false;
   }
+  console.error('[Background] All initialization attempts failed');
+  return false;
 }
 
 // Set up alarms

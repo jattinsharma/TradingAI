@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiQuery, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PredictionsService } from './predictions.service';
 import { PredictionEvaluatorService } from './prediction-evaluator.service';
+import { Prediction } from '../../database/schemas/prediction.schema';
 
 @ApiTags('Predictions')
 @ApiBearerAuth()
@@ -36,8 +37,8 @@ export class PredictionsController {
       },
     },
   })
-  async create(@Body() data: Record<string, unknown>) {
-    return this.predictionsService.create(data as any);
+  async create(@Body() data: Partial<Prediction>) {
+    return this.predictionsService.create(data);
   }
 
   @Get()

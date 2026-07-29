@@ -12,6 +12,16 @@ export interface BackendConfig {
   apiKey?: string;
 }
 
+export interface AuthResponse {
+  access_token: string;
+  refresh_token: string;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+  };
+}
+
 export interface AnalysisPayload {
   symbol: string;
   timeframe: string;
@@ -32,6 +42,24 @@ export interface AnalysisPayload {
   platform?: string;
 }
 
+export interface AnalysisListItem {
+  id: string;
+  symbol: string;
+  timeframe: string;
+  currentPrice: number;
+  recommendation: string;
+  confidence: number;
+  entryPrice?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  createdAt: string;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+}
+
 export interface TradeJournalPayload {
   symbol: string;
   side: 'LONG' | 'SHORT';
@@ -50,6 +78,23 @@ export interface TradeJournalPayload {
   aiConfidence?: number;
   screenshotUrls?: string[];
   rating?: number;
+}
+
+export interface TradeJournalListItem {
+  id: string;
+  symbol: string;
+  side: string;
+  entryPrice: number;
+  pnl?: number;
+  pnlPercent?: number;
+  createdAt: string;
+}
+
+export interface StatsResponse {
+  total: number;
+  wins: number;
+  losses: number;
+  winRate: number;
 }
 
 export class TradingCopilotApi {
@@ -232,8 +277,8 @@ export class TradingCopilotApi {
 
   // ─── Auth ──────────────────────────────────────────────
 
-  async login(email: string, password: string): Promise<{ access_token: string; refresh_token: string; user: any }> {
-    const result = await this.request<{ access_token: string; refresh_token: string; user: any }>(
+  async login(email: string, password: string): Promise<AuthResponse> {
+    const result = await this.request<AuthResponse>(
       'POST',
       '/auth/login',
       { email, password },
@@ -243,8 +288,8 @@ export class TradingCopilotApi {
     return result;
   }
 
-  async register(email: string, password: string, name: string): Promise<{ access_token: string; refresh_token: string; user: any }> {
-    const result = await this.request<{ access_token: string; refresh_token: string; user: any }>(
+  async register(email: string, password: string, name: string): Promise<AuthResponse> {
+    const result = await this.request<AuthResponse>(
       'POST',
       '/auth/register',
       { email, password, name },
@@ -256,8 +301,8 @@ export class TradingCopilotApi {
 
   // ─── Analysis History ──────────────────────────────────
 
-  async saveAnalysis(data: AnalysisPayload): Promise<any> {
-    return this.request('POST', '/analysis', data);
+  async saveAnalysis(data: AnalysisPayload): Promise<{ id: string }> {
+    return this.request<{ id: string }>('POST', '/analysis', data);
   }
 
   async getAnalyses(filters?: {
@@ -268,7 +313,7 @@ export class TradingCopilotApi {
     limit?: number;
     offset?: number;
     sort?: string;
-  }): Promise<{ items: any[]; total: number }> {
+  }): Promise<PaginatedResponse<AnalysisListItem>> {
     const params = new URLSearchParams();
     if (filters?.symbol) params.set('symbol', filters.symbol);
     if (filters?.recommendation) params.set('recommendation', filters.recommendation);
@@ -278,22 +323,22 @@ export class TradingCopilotApi {
     if (filters?.offset) params.set('offset', String(filters.offset));
     if (filters?.sort) params.set('sort', filters.sort);
     const qs = params.toString();
-    return this.request('GET', `/analysis${qs ? `?${qs}` : ''}`);
+    return this.request<PaginatedResponse<AnalysisListItem>>('GET', `/analysis${qs ? `?${qs}` : ''}`);
   }
 
-  async getAnalysisStats(symbol?: string): Promise<any> {
+  async getAnalysisStats(symbol?: string): Promise<StatsResponse> {
     const qs = symbol ? `?symbol=${encodeURIComponent(symbol)}` : '';
-    return this.request('GET', `/analysis/stats${qs}`);
+    return this.request<StatsResponse>('GET', `/analysis/stats${qs}`);
   }
 
-  async updateAnalysisOutcome(id: string, outcome: 'WIN' | 'LOSS' | 'PENDING'): Promise<any> {
-    return this.request('PATCH', `/analysis/${id}/outcome`, { outcome });
+  async updateAnalysisOutcome(id: string, outcome: 'WIN' | 'LOSS' | 'PENDING'): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>('PATCH', `/analysis/${id}/outcome`, { outcome });
   }
 
   // ─── Trade Journal ─────────────────────────────────────
 
-  async saveTradeJournalEntry(data: TradeJournalPayload): Promise<any> {
-    return this.request('POST', '/trade-journal', data);
+  async saveTradeJournalEntry(data: TradeJournalPayload): Promise<{ id: string }> {
+    return this.request<{ id: string }>('POST', '/trade-journal', data);
   }
 
   async getTradeJournalEntries(filters?: {
@@ -303,7 +348,7 @@ export class TradingCopilotApi {
     endDate?: string;
     limit?: number;
     offset?: number;
-  }): Promise<{ items: any[]; total: number }> {
+  }): Promise<PaginatedResponse<TradeJournalListItem>> {
     const params = new URLSearchParams();
     if (filters?.symbol) params.set('symbol', filters.symbol);
     if (filters?.side) params.set('side', filters.side);
@@ -312,11 +357,11 @@ export class TradingCopilotApi {
     if (filters?.limit) params.set('limit', String(filters.limit));
     if (filters?.offset) params.set('offset', String(filters.offset));
     const qs = params.toString();
-    return this.request('GET', `/trade-journal${qs ? `?${qs}` : ''}`);
+    return this.request<PaginatedResponse<TradeJournalListItem>>('GET', `/trade-journal${qs ? `?${qs}` : ''}`);
   }
 
-  async getTradeJournalStats(): Promise<any> {
-    return this.request('GET', '/trade-journal/stats');
+  async getTradeJournalStats(): Promise<StatsResponse> {
+    return this.request<StatsResponse>('GET', '/trade-journal/stats');
   }
 }
 

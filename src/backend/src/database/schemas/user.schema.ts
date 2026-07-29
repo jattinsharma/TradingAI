@@ -30,6 +30,9 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+UserSchema.index({ email: 1, isActive: 1 });
+UserSchema.index({ createdAt: -1 });
+
 // Pre-save hook: hash password if modified
 UserSchema.pre<UserDocument>('save', async function (next) {
   if (!this.isModified('password')) return next();

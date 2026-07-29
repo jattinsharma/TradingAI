@@ -21,3 +21,6 @@ export class AnalyticsEvent {
 }
 
 export const AnalyticsEventSchema = SchemaFactory.createForClass(AnalyticsEvent);
+
+AnalyticsEventSchema.index({ userId: 1, timestamp: -1 });
+AnalyticsEventSchema.index({ eventType: 1, timestamp: -1 });

@@ -3,6 +3,8 @@
  * Premium dark-mode overlay with full trade setup display.
  */
 
+import type { AnalysisResult } from '../shared/types';
+
 export class ChartOverlay {
   private overlayContainer: HTMLElement | null = null;
   private isInitialized = false;
@@ -26,80 +28,155 @@ export class ChartOverlay {
       container.id = 'trading-copilot-overlay';
       container.style.cssText = `
         position: fixed; top: 20px; right: 20px; z-index: 999999;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        font-size: 12px; color: #e6edf3;
+        -webkit-font-smoothing: antialiased;
       `;
 
       container.innerHTML = `
         <div id="overlay-container" style="
-          width: 320px; background: rgba(13,17,23,0.94);
-          border: 1px solid rgba(48,54,61,0.8); border-radius: 10px;
-          overflow: hidden; backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+          width: 300px;
+          font-family: 'SF Mono','Fira Code','Consolas','Roboto Mono',monospace;
+          font-size: 11px;
+          background: rgba(10,13,18,0.95);
+          border: 1px solid rgba(56,68,84,0.4);
+          border-radius: 6px;
+          overflow: hidden;
+          backdrop-filter: blur(16px);
+          -webkit-backdrop-filter: blur(16px);
+          box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+          color: #d4dcec;
         ">
-          <div class="overlay-header" style="
+          <div class="ov-header" style="
             display:flex;align-items:center;justify-content:space-between;
-            padding:10px 14px;background:rgba(22,27,34,0.9);border-bottom:1px solid rgba(48,54,61,0.8);
+            padding:8px 12px;
+            background: linear-gradient(135deg, #0f1729, #131d31);
+            border-bottom:1px solid rgba(56,68,84,0.3);
             cursor:move;user-select:none;
           ">
-            <div style="display:flex;align-items:center;gap:8px;">
-              <span id="ov-symbol" style="font-size:15px;font-weight:700;">---</span>
-              <span id="ov-timeframe" style="font-size:10px;color:#6e7681;background:rgba(33,38,45,0.85);padding:2px 6px;border-radius:4px;">---</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span id="ov-symbol" style="font-size:14px;font-weight:700;letter-spacing:0.3px;">---</span>
+              <span id="ov-timeframe" style="
+                font-size:9px;color:#556577;
+                background:rgba(30,42,61,0.9);
+                padding:1px 5px;border-radius:3px;
+                border:1px solid rgba(56,68,84,0.2);
+              ">---</span>
             </div>
-            <div style="display:flex;gap:4px;">
-              <button id="ov-settings-btn" style="background:none;border:none;color:#6e7681;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:4px;" title="Settings">⚙️</button>
-              <button id="ov-close-btn" style="background:none;border:none;color:#6e7681;font-size:14px;cursor:pointer;padding:2px 6px;border-radius:4px;" title="Close">✕</button>
+            <div style="display:flex;gap:3px;">
+              <button id="ov-pin-btn" style="
+                background:none;border:1px solid transparent;
+                color:#556577;font-size:10px;cursor:pointer;
+                padding:2px 5px;border-radius:3px;
+                transition:all 0.15s;
+              " title="Pin overlay">📌</button>
+              <button id="ov-close-btn" style="
+                background:none;border:1px solid transparent;
+                color:#556577;font-size:12px;cursor:pointer;
+                padding:2px 5px;border-radius:3px;
+                transition:all 0.15s;
+              " title="Close overlay">✕</button>
             </div>
           </div>
-          <div style="padding:12px 14px;">
-            <div id="ov-rec-box" style="text-align:center;padding:10px;margin-bottom:10px;border-radius:8px;background:rgba(33,38,45,0.85);">
-              <div id="ov-rec-text" style="font-size:18px;font-weight:800;letter-spacing:1px;text-transform:uppercase;">ANALYZING</div>
-              <div id="ov-rec-sub" style="font-size:11px;opacity:0.85;margin-top:2px;">Computing signals...</div>
-              <div style="width:100%;height:3px;background:rgba(255,255,255,0.15);border-radius:2px;overflow:hidden;margin:6px 0;">
-                <div id="ov-conf-fill" style="height:100%;border-radius:2px;transition:width 0.6s ease;width:0%;background:#fff;"></div>
+
+          <div style="padding:10px 12px;">
+            <!-- Signal Box -->
+            <div id="ov-rec-box" style="
+              position:relative;overflow:hidden;
+              text-align:center;padding:8px;
+              margin-bottom:8px;border-radius:5px;
+              background:rgba(24,32,42,0.9);
+              border:1px solid rgba(56,68,84,0.15);
+            ">
+              <div id="ov-rec-bg" style="
+                position:absolute;top:0;left:0;right:0;bottom:0;
+                opacity:0.06;transition:background 0.5s;
+              "></div>
+              <div style="position:relative;z-index:1;">
+                <div id="ov-rec-text" style="
+                  font-size:20px;font-weight:800;
+                  letter-spacing:2px;color:#556577;
+                  transition:color 0.3s;
+                ">ANALYZING</div>
+                <div id="ov-rec-sub" style="
+                  font-size:10px;color:#556577;
+                  margin-top:2px;
+                ">Computing signals...</div>
+                <div style="
+                  width:100%;height:2px;
+                  background:rgba(255,255,255,0.06);
+                  border-radius:2px;overflow:hidden;
+                  margin:6px 0 0;
+                ">
+                  <div id="ov-conf-fill" style="
+                    height:100%;border-radius:2px;
+                    transition:width 0.6s cubic-bezier(0.22,1,0.36,1);
+                    width:0%;background:#556577;
+                  "></div>
+                </div>
               </div>
             </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid rgba(48,54,61,0.8);margin-bottom:8px;">
-              <span style="font-size:11px;color:#8b949e;">Current Price</span>
-              <span id="ov-price" style="font-size:14px;font-weight:600;color:#e6edf3;">---</span>
+
+            <!-- Price Row -->
+            <div style="
+              display:flex;align-items:center;justify-content:space-between;
+              padding:4px 0;margin-bottom:6px;
+              border-bottom:1px solid rgba(56,68,84,0.15);
+            ">
+              <span style="font-size:9px;color:#556577;text-transform:uppercase;letter-spacing:0.5px;">Price</span>
+              <span id="ov-price" style="font-size:16px;font-weight:600;color:#d4dcec;">---</span>
             </div>
-            <div id="ov-setup-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;">
-              <div class="setup-item" style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(33,38,45,0.85);border-radius:4px;font-size:11px;">
-                <span style="color:#6e7681;">Entry</span>
-                <span id="ov-entry" style="font-weight:600;color:#3fb950;">---</span>
+
+            <!-- Trade Setup Grid -->
+            <div id="ov-setup-grid" style="
+              display:grid;grid-template-columns:1fr 1fr;gap:2px;
+              margin-bottom:6px;
+            ">
+              <div class="ov-item" style="display:flex;justify-content:space-between;padding:4px 6px;background:rgba(24,32,42,0.8);border-radius:3px;font-size:10px;">
+                <span style="color:#556577;">Entry</span>
+                <span id="ov-entry" style="font-weight:600;color:#26c66a;">---</span>
               </div>
-              <div class="setup-item" style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(33,38,45,0.85);border-radius:4px;font-size:11px;">
-                <span style="color:#6e7681;">Stop Loss</span>
-                <span id="ov-sl" style="font-weight:600;color:#f85149;">---</span>
+              <div class="ov-item" style="display:flex;justify-content:space-between;padding:4px 6px;background:rgba(24,32,42,0.8);border-radius:3px;font-size:10px;">
+                <span style="color:#556577;">Stop</span>
+                <span id="ov-sl" style="font-weight:600;color:#f25c5c;">---</span>
               </div>
-              <div class="setup-item" style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(33,38,45,0.85);border-radius:4px;font-size:11px;">
-                <span style="color:#6e7681;">Take Profit</span>
-                <span id="ov-tp" style="font-weight:600;color:#3fb950;">---</span>
+              <div class="ov-item" style="display:flex;justify-content:space-between;padding:4px 6px;background:rgba(24,32,42,0.8);border-radius:3px;font-size:10px;">
+                <span style="color:#556577;">TP</span>
+                <span id="ov-tp" style="font-weight:600;color:#26c66a;">---</span>
               </div>
-              <div class="setup-item" style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(33,38,45,0.85);border-radius:4px;font-size:11px;">
-                <span style="color:#6e7681;">R:R Ratio</span>
-                <span id="ov-rr" style="font-weight:600;color:#d29922;">---</span>
-              </div>
-              <div class="setup-item" style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(33,38,45,0.85);border-radius:4px;font-size:11px;">
-                <span style="color:#6e7681;">Risk</span>
-                <span id="ov-risk" style="font-weight:600;color:#e6edf3;">---</span>
-              </div>
-              <div class="setup-item" style="display:flex;justify-content:space-between;padding:5px 8px;background:rgba(33,38,45,0.85);border-radius:4px;font-size:11px;">
-                <span style="color:#6e7681;">Duration</span>
-                <span id="ov-duration" style="font-weight:600;color:#e6edf3;">---</span>
+              <div class="ov-item" style="display:flex;justify-content:space-between;padding:4px 6px;background:rgba(24,32,42,0.8);border-radius:3px;font-size:10px;">
+                <span style="color:#556577;">R:R</span>
+                <span id="ov-rr" style="font-weight:600;color:#e8a838;">---</span>
               </div>
             </div>
-            <div style="font-size:10px;font-weight:600;color:#6e7681;text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 4px;">Reasoning</div>
-            <div id="ov-reasoning" style="font-size:11px;color:#8b949e;line-height:1.5;padding:6px 8px;background:rgba(33,38,45,0.85);border-radius:4px;max-height:60px;overflow:hidden;cursor:pointer;transition:max-height 0.3s;margin-bottom:8px;">No analysis yet.</div>
-            <div id="ov-risks-section" style="display:none;">
-              <div style="font-size:10px;font-weight:600;color:#6e7681;text-transform:uppercase;letter-spacing:0.5px;margin:8px 0 4px;">Key Risks</div>
+
+            <!-- Reasoning -->
+            <div style="font-size:8px;color:#556577;text-transform:uppercase;letter-spacing:0.8px;margin:6px 0 3px;">Analysis</div>
+            <div id="ov-reasoning" style="
+              font-size:10px;color:#8895aa;line-height:1.5;
+              padding:5px 7px;background:rgba(24,32,42,0.8);
+              border-radius:3px;max-height:48px;overflow:hidden;
+              cursor:pointer;transition:max-height 0.3s;
+              font-family:inherit;
+            ">No analysis yet.</div>
+
+            <!-- Risks -->
+            <div id="ov-risks-section" style="display:none;margin-top:6px;">
+              <div style="font-size:8px;color:#556577;text-transform:uppercase;letter-spacing:0.8px;margin:0 0 3px;">Risks</div>
               <div id="ov-risks-list"></div>
             </div>
           </div>
-          <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:6px 14px;background:rgba(22,27,34,0.9);border-top:1px solid rgba(48,54,61,0.8);">
-            <button id="ov-reanalyze-btn" style="background:none;border:none;color:#6e7681;font-size:12px;cursor:pointer;padding:2px 8px;border-radius:4px;" title="Re-analyze">🔄 Re-analyze</button>
-            <button id="ov-pin-btn" style="background:none;border:none;color:#6e7681;font-size:12px;cursor:pointer;padding:2px 8px;border-radius:4px;" title="Pin">📌 Pin</button>
+
+          <div style="
+            display:flex;align-items:center;justify-content:flex-end;gap:2px;
+            padding:5px 12px;
+            background:rgba(17,22,30,0.95);
+            border-top:1px solid rgba(56,68,84,0.2);
+          ">
+            <button id="ov-reanalyze-btn" style="
+              background:none;border:none;
+              color:#556577;font-size:10px;cursor:pointer;
+              padding:3px 8px;border-radius:3px;
+              font-family:inherit;transition:color 0.15s;
+            " title="Re-analyze current chart">🔄 Re-analyze</button>
           </div>
         </div>
       `;
@@ -127,8 +204,16 @@ export class ChartOverlay {
             if (ovTimeframe && ovTimeframe !== '---') {
               payload.timeframe = ovTimeframe;
             }
-            chrome.runtime.sendMessage({ type: 'REQUEST_ANALYSIS', payload });
             this.showLoading('Re-analyzing...');
+            chrome.runtime.sendMessage({ type: 'REQUEST_ANALYSIS', payload }, () => {
+              // On error (e.g. background not responding), overlay stays in loading state
+              // The background will send UPDATE_OVERLAY when analysis completes.
+              // If sendMessage itself fails, reset the overlay display.
+              if (chrome.runtime.lastError) {
+                console.warn('[Overlay] Re-analyze request failed:', chrome.runtime.lastError.message);
+                this.showError('Analysis request failed. Check your connection.');
+              }
+            });
           });
         }
 
@@ -162,7 +247,7 @@ export class ChartOverlay {
       }, 0);
 
       // Drag header
-      const header = container.querySelector('.overlay-header') as HTMLElement;
+      const header = container.querySelector('.ov-header') as HTMLElement;
       if (header) {
         header.addEventListener('mousedown', this.handleMouseDown);
       }
@@ -177,8 +262,15 @@ export class ChartOverlay {
   }
 
   destroy(): void {
-    if (this.overlayContainer && this.overlayContainer.parentNode) {
-      this.overlayContainer.parentNode.removeChild(this.overlayContainer);
+    // Remove drag-header mousedown listener before removing the container
+    if (this.overlayContainer) {
+      const header = this.overlayContainer.querySelector('.overlay-header') as HTMLElement;
+      if (header && header.removeEventListener) {
+        header.removeEventListener('mousedown', this.handleMouseDown);
+      }
+      if (this.overlayContainer.parentNode) {
+        this.overlayContainer.parentNode.removeChild(this.overlayContainer);
+      }
     }
     document.removeEventListener('mousemove', this.handleMouseMove);
     document.removeEventListener('mouseup', this.handleMouseUp);
@@ -228,7 +320,7 @@ export class ChartOverlay {
     if (recSub) recSub.textContent = errorMessage;
   }
 
-  async updateAnalysis(result: any): Promise<void> {
+  async updateAnalysis(result: AnalysisResult): Promise<void> {
     if (!this.overlayContainer) return;
 
     const symbol = this.overlayContainer.querySelector('#ov-symbol') as HTMLElement;
@@ -242,8 +334,6 @@ export class ChartOverlay {
     const sl = this.overlayContainer.querySelector('#ov-sl') as HTMLElement;
     const tp = this.overlayContainer.querySelector('#ov-tp') as HTMLElement;
     const rr = this.overlayContainer.querySelector('#ov-rr') as HTMLElement;
-    const riskEl = this.overlayContainer.querySelector('#ov-risk') as HTMLElement;
-    const durationEl = this.overlayContainer.querySelector('#ov-duration') as HTMLElement;
     const reasoning = this.overlayContainer.querySelector('#ov-reasoning') as HTMLElement;
     const risksSection = this.overlayContainer.querySelector('#ov-risks-section') as HTMLElement;
     const risksList = this.overlayContainer.querySelector('#ov-risks-list') as HTMLElement;
@@ -252,7 +342,6 @@ export class ChartOverlay {
     const conf = result.confidence ?? 50;
     const currentPrice = result.currentPrice ?? (result.engines?.technical?.indicators?.atr ?? 0);
     const tradePlan = result.engines?.tradePlanning?.tradeSetup;
-    const riskData = result.engines?.risk;
     const aiExplanation = result.engines?.aiExplanation;
     const userReasoning = result.reasoning || '';
 
@@ -292,8 +381,7 @@ export class ChartOverlay {
         ? `${rrVal.toFixed(2)}:1`
         : '---';
     }
-    if (riskEl) riskEl.textContent = riskData?.riskLevel || '---';
-    if (durationEl) durationEl.textContent = tradePlan?.maxHoldTime || '---';
+
 
     // Reasoning
     if (reasoning) {
@@ -305,16 +393,24 @@ export class ChartOverlay {
       reasoning.classList.remove('expanded');
     }
 
-    // Risks
+    // Risks — use textContent to prevent XSS when rendering AI-generated content
     const risks = aiExplanation?.risks || [];
     if (risks.length > 0 && risksList) {
       risksSection.style.display = 'block';
-      risksList.innerHTML = risks.map((r: string) =>
-        `<div style="display:flex;align-items:start;gap:6px;font-size:10px;color:#8b949e;padding:3px 6px;background:rgba(248,81,73,0.08);border-radius:3px;border-left:2px solid #f85149;margin-bottom:2px;">
-          <span style="color:#f85149;font-size:10px;">⚠</span>
-          <span>${r}</span>
-        </div>`
-      ).join('');
+      risksList.textContent = ''; // Clear existing content
+      // Use DOM API (not innerHTML) for AI-generated content to prevent XSS
+      for (const riskText of risks) {
+        const riskEl = document.createElement('div');
+        riskEl.style.cssText = 'display:flex;align-items:start;gap:6px;font-size:10px;color:#8b949e;padding:3px 6px;background:rgba(248,81,73,0.08);border-radius:3px;border-left:2px solid #f85149;margin-bottom:2px;';
+        const iconSpan = document.createElement('span');
+        iconSpan.style.cssText = 'color:#f85149;font-size:10px;';
+        iconSpan.textContent = '⚠';
+        const textSpan = document.createElement('span');
+        textSpan.textContent = riskText;
+        riskEl.appendChild(iconSpan);
+        riskEl.appendChild(textSpan);
+        risksList.appendChild(riskEl);
+      }
     } else {
       risksSection.style.display = 'none';
     }
@@ -322,7 +418,7 @@ export class ChartOverlay {
     await this.show();
   }
 
-  async update(data: any): Promise<void> {
+  async update(data: { analysisResult?: AnalysisResult; loading?: boolean; message?: string; error?: string; visible?: boolean }): Promise<void> {
     if (data?.analysisResult) {
       await this.updateAnalysis(data.analysisResult);
     } else if (data?.loading) {
@@ -363,7 +459,7 @@ export class ChartOverlay {
     this.isDragging = false;
   };
 
-  private formatPrice(price: number): string {
+  private formatPrice(price: number | undefined | null): string {
     if (typeof price !== 'number' || !isFinite(price)) return '---';
     if (price < 1) return price.toFixed(6);
     if (price < 100) return price.toFixed(4);

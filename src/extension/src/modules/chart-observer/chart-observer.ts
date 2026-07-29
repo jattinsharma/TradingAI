@@ -2,7 +2,7 @@
 // Observes chart/data updates on trading platforms and triggers analysis
 
 import { WebsiteDetector } from '../website-detector/website-detector';
-import { sendMessageToPopup } from '../../utils/messaging';
+import { sendMessageToBackend } from '../../utils/messaging';
 
 export class ChartObserver {
   private observationInterval: number | null = null;
@@ -167,7 +167,7 @@ export class ChartObserver {
       console.log(`Chart update detected for ${symbol} on ${timeframe} timeframe`);
 
       // Notify popup that chart data has updated
-      sendMessageToPopup({
+      sendMessageToBackend({
         type: 'CHART_UPDATE',
         payload: {
           symbol,
@@ -185,6 +185,7 @@ export class ChartObserver {
 
   /**
    * Set up periodic checks as a backup mechanism
+   * Only starts polling if currently on a supported trading page.
    */
   private setupPeriodicChecks(): void {
     // Clear any existing interval
@@ -193,8 +194,20 @@ export class ChartObserver {
       this.observationInterval = null;
     }
 
+    // Don't start polling if not on a trading page
+    if (!WebsiteDetector.isTradingPage()) {
+      console.log('[ChartObserver] Not on trading page — skipping periodic checks');
+      return;
+    }
+
     // Check every 5 seconds for chart updates
     this.observationInterval = window.setInterval(() => {
+      // Stop polling if we've navigated away from the trading page
+      if (!WebsiteDetector.isTradingPage()) {
+        console.log('[ChartObserver] Left trading page — stopping periodic checks');
+        this.stopObserving();
+        return;
+      }
       this.checkForChartUpdates();
     }, 5000);
   }
@@ -233,7 +246,7 @@ export class ChartObserver {
         this.lastUpdateTime = now;
 
         // Notify of potential update
-        sendMessageToPopup({
+        sendMessageToBackend({
           type: 'CHART_CHECK',
           payload: {
             timestamp: now,
