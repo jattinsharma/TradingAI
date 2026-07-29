@@ -1,4 +1,5 @@
 // Shared types for the extension
+
 export interface AnalysisResult {
   symbol: string;
   timeframe: string;
@@ -12,6 +13,27 @@ export interface AnalysisResult {
     volatility: { signal: 'HIGH' | 'LOW' | 'NEUTRAL'; strength: number };
   };
   reasoning: string;
+  currentPrice?: number;
+  riskLevel?: string;
+  entryPrice?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  riskRewardRatio?: number;
+  // Legacy engines object — populated by AnalysisOrchestrator for backward compatibility
+  engines: {
+    technical: any;
+    pattern: any;
+    trend: any;
+    supportResistance: any;
+    volume: any;
+    momentum: any;
+    news: any;
+    sentiment: any;
+    risk: any;
+    portfolio: any;
+    tradePlanning: any;
+    aiExplanation: any;
+  };
 }
 
 export interface EngineResult {
@@ -42,4 +64,49 @@ export interface ChartData {
 export interface ExtensionMessage {
   type: string;
   payload?: any;
+}
+
+// ── Market Data Types ──
+
+export interface TradingViewDOMData {
+  symbol: string;
+  timeframe: string;
+  currentPrice: number | null;
+  bid: number | null;
+  ask: number | null;
+  spread: number | null;
+  marketStatus: string | null;
+  source: 'tradingview_dom';
+  extractedAt: number;
+}
+
+export interface OHLCVData {
+  timestamps: number[];
+  open: number[];
+  high: number[];
+  low: number[];
+  close: number[];
+  volume: number[];
+  symbol: string;
+  timeframe: string;
+  currentPrice: number;
+  source: string;
+}
+
+export interface MarketDataResult {
+  dom: TradingViewDOMData;
+  ohlcv: OHLCVData;
+  symbol: string;
+  timeframe: string;
+  currentPrice: number;
+  collectedAt: number;
+  sources: string[];
+}
+
+export interface ChartChangeEvent {
+  type: 'symbol' | 'timeframe' | 'price' | 'candle' | 'unknown';
+  symbol: string;
+  timeframe: string;
+  currentPrice: number | null;
+  timestamp: number;
 }

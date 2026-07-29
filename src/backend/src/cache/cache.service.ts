@@ -1,10 +1,5 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import Redis from 'ioredis';
-
-export interface CacheOptions {
-  ttlSeconds: number;
-  prefix?: string;
-}
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import type Redis from 'ioredis';
 
 const DEFAULT_CACHE_TTL = {
   MARKET_DATA: 60,          // 1 minute
@@ -16,95 +11,111 @@ const DEFAULT_CACHE_TTL = {
   QUOTE: 30,                // 30 seconds
 };
 
-@Injectable()
-export class CacheService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(CacheService.name);
-  private client: Redis | null = null;
-  private isConnected = false;
-  private reconnectAttempts = 0;
-  private readonly maxReconnectAttempts = 10;
-  private readonly reconnectDelayMs = 2000;
+interface CacheEntry {
+  data: string;
+  expiresAt: number;
+}
 
-  onModuleInit() {
-    this.connect();
+@Injectable()
+export class CacheService implements OnModuleDestroy {
+  private readonly logger = new Logger(CacheService.name);
+  private redisClient: Redis | null = null;
+  private memoryStore: Map<string, CacheEntry> | null = null;
+  private mode: 'redis' | 'memory' = 'memory';
+
+  constructor() {
+    this.initialize();
   }
 
-  onModuleDestroy() {
-    if (this.client) {
-      this.client.disconnect();
-      this.client = null;
+  private initialize(): void {
+    const redisUrl = process.env.REDIS_URL?.trim();
+    if (redisUrl) {
+      this.initRedis(redisUrl);
+    } else {
+      this.logger.log('REDIS_URL not set — using in-memory cache');
+      this.memoryStore = new Map();
+      this.mode = 'memory';
     }
   }
 
-  private connect() {
+  private async initRedis(redisUrl: string): Promise<void> {
     try {
-      const host = process.env.REDIS_HOST || 'localhost';
-      const port = parseInt(process.env.REDIS_PORT || '6379', 10);
-      const password = process.env.REDIS_PASSWORD || undefined;
-      const db = parseInt(process.env.REDIS_DB || '0', 10);
-
-      this.client = new Redis({
-        host,
-        port,
-        password,
-        db,
-        retryStrategy: (times: number) => {
-          if (times > this.maxReconnectAttempts) {
-            this.logger.error('Max Redis reconnection attempts reached');
-            return null;
-          }
-          const delay = Math.min(times * this.reconnectDelayMs, 30000);
-          this.logger.warn(`Redis reconnecting in ${delay}ms (attempt ${times})`);
-          return delay;
-        },
+      const { default: IORedis } = await import('ioredis');
+      this.redisClient = new IORedis(redisUrl, {
         lazyConnect: true,
         enableOfflineQueue: false,
         maxRetriesPerRequest: 3,
+        retryStrategy: (times: number) => {
+          if (times > 10) {
+            this.logger.error('Max Redis reconnection attempts reached');
+            return null;
+          }
+          const delay = Math.min(times * 2000, 30000);
+          this.logger.warn(`Redis reconnecting in ${delay}ms (attempt ${times})`);
+          return delay;
+        },
       });
 
-      this.client.on('connect', () => {
-        this.isConnected = true;
-        this.reconnectAttempts = 0;
-        this.logger.log(`Connected to Redis at ${host}:${port}`);
+      this.redisClient.on('connect', () => {
+        this.logger.log('Connected to Redis');
       });
 
-      this.client.on('error', (err) => {
-        this.isConnected = false;
+      this.redisClient.on('error', (err) => {
         this.logger.error(`Redis error: ${err.message}`);
       });
 
-      this.client.on('close', () => {
-        this.isConnected = false;
+      this.redisClient.on('close', () => {
         this.logger.warn('Redis connection closed');
       });
 
-      this.client.on('reconnecting', () => {
-        this.reconnectAttempts++;
-        this.logger.warn(`Redis reconnecting (attempt ${this.reconnectAttempts})`);
+      this.redisClient.on('reconnecting', () => {
+        this.logger.warn('Redis reconnecting...');
       });
 
-      (async () => {
-        try {
-          await this.client!.connect();
-        } catch (err) {
-          this.logger.warn(`Redis connection failed: ${(err as Error).message}. Caching disabled.`);
-        }
-      })();
+      await this.redisClient.connect();
+      this.mode = 'redis';
     } catch (err) {
-      this.logger.warn(`Redis initialization failed: ${(err as Error).message}. Caching disabled.`);
+      this.logger.warn(`Redis connection failed: ${(err as Error).message}. Falling back to in-memory cache.`);
+      this.redisClient = null;
+      this.mode = 'memory';
+      this.memoryStore = new Map();
     }
   }
 
   isReady(): boolean {
-    return this.isConnected && this.client !== null && this.client.status === 'ready';
+    if (this.mode === 'memory') {
+      return this.memoryStore !== null;
+    }
+    return this.redisClient !== null && this.redisClient.status === 'ready';
+  }
+
+  // --- Private helpers ---
+
+  private isExpired(entry: CacheEntry): boolean {
+    return entry.expiresAt > 0 && Date.now() > entry.expiresAt;
   }
 
   // --- Generic Cache ---
 
   async get<T>(key: string): Promise<T | null> {
     if (!this.isReady()) return null;
+
+    if (this.mode === 'memory') {
+      const entry = this.memoryStore!.get(key);
+      if (!entry) return null;
+      if (this.isExpired(entry)) {
+        this.memoryStore!.delete(key);
+        return null;
+      }
+      try {
+        return JSON.parse(entry.data) as T;
+      } catch {
+        return null;
+      }
+    }
+
     try {
-      const value = await this.client!.get(key);
+      const value = await this.redisClient!.get(key);
       if (value === null) return null;
       return JSON.parse(value) as T;
     } catch (err) {
@@ -115,12 +126,22 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   async set(key: string, value: unknown, ttlSeconds?: number): Promise<boolean> {
     if (!this.isReady()) return false;
+
+    if (this.mode === 'memory') {
+      const expiresAt = ttlSeconds ? Date.now() + ttlSeconds * 1000 : 0;
+      this.memoryStore!.set(key, {
+        data: JSON.stringify(value),
+        expiresAt,
+      });
+      return true;
+    }
+
     try {
       const serialized = JSON.stringify(value);
       if (ttlSeconds) {
-        await this.client!.setex(key, ttlSeconds, serialized);
+        await this.redisClient!.setex(key, ttlSeconds, serialized);
       } else {
-        await this.client!.set(key, serialized);
+        await this.redisClient!.set(key, serialized);
       }
       return true;
     } catch (err) {
@@ -131,8 +152,13 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   async del(key: string): Promise<boolean> {
     if (!this.isReady()) return false;
+
+    if (this.mode === 'memory') {
+      return this.memoryStore!.delete(key);
+    }
+
     try {
-      await this.client!.del(key);
+      await this.redisClient!.del(key);
       return true;
     } catch (err) {
       this.logger.error(`Cache del error for ${key}: ${(err as Error).message}`);
@@ -142,8 +168,19 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   async exists(key: string): Promise<boolean> {
     if (!this.isReady()) return false;
+
+    if (this.mode === 'memory') {
+      const entry = this.memoryStore!.get(key);
+      if (!entry) return false;
+      if (this.isExpired(entry)) {
+        this.memoryStore!.delete(key);
+        return false;
+      }
+      return true;
+    }
+
     try {
-      const result = await this.client!.exists(key);
+      const result = await this.redisClient!.exists(key);
       return result === 1;
     } catch {
       return false;
@@ -152,10 +189,26 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   async clearPattern(pattern: string): Promise<boolean> {
     if (!this.isReady()) return false;
+
+    if (this.mode === 'memory') {
+      const prefix = pattern.endsWith('*') ? pattern.slice(0, -1) : pattern;
+      let count = 0;
+      for (const key of this.memoryStore!.keys()) {
+        if (key.startsWith(prefix)) {
+          this.memoryStore!.delete(key);
+          count++;
+        }
+      }
+      if (count > 0) {
+        this.logger.log(`Cleared ${count} in-memory cache keys matching ${pattern}`);
+      }
+      return true;
+    }
+
     try {
-      const keys = await this.client!.keys(pattern);
+      const keys = await this.redisClient!.keys(pattern);
       if (keys.length > 0) {
-        await this.client!.del(...keys);
+        await this.redisClient!.del(...keys);
         this.logger.log(`Cleared ${keys.length} cache keys matching ${pattern}`);
       }
       return true;
@@ -217,10 +270,21 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   // --- Background Queue ---
 
+  private readonly memoryQueues: Map<string, unknown[]> = new Map();
+
   async pushToQueue(queueName: string, payload: unknown): Promise<boolean> {
     if (!this.isReady()) return false;
+
+    if (this.mode === 'memory') {
+      if (!this.memoryQueues.has(queueName)) {
+        this.memoryQueues.set(queueName, []);
+      }
+      this.memoryQueues.get(queueName)!.push(payload);
+      return true;
+    }
+
     try {
-      await this.client!.rpush(`queue:${queueName}`, JSON.stringify(payload));
+      await this.redisClient!.rpush(`queue:${queueName}`, JSON.stringify(payload));
       return true;
     } catch (err) {
       this.logger.error(`Queue push error: ${(err as Error).message}`);
@@ -230,8 +294,15 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   async popFromQueue<T>(queueName: string): Promise<T | null> {
     if (!this.isReady()) return null;
+
+    if (this.mode === 'memory') {
+      const queue = this.memoryQueues.get(queueName);
+      if (!queue || queue.length === 0) return null;
+      return queue.shift() as T;
+    }
+
     try {
-      const item = await this.client!.lpop(`queue:${queueName}`);
+      const item = await this.redisClient!.lpop(`queue:${queueName}`);
       if (item === null) return null;
       return JSON.parse(item) as T;
     } catch (err) {
@@ -242,8 +313,13 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   async getQueueLength(queueName: string): Promise<number> {
     if (!this.isReady()) return 0;
+
+    if (this.mode === 'memory') {
+      return this.memoryQueues.get(queueName)?.length ?? 0;
+    }
+
     try {
-      return await this.client!.llen(`queue:${queueName}`);
+      return await this.redisClient!.llen(`queue:${queueName}`);
     } catch {
       return 0;
     }
@@ -271,11 +347,28 @@ export class CacheService implements OnModuleInit, OnModuleDestroy {
 
   async ping(): Promise<boolean> {
     if (!this.isReady()) return false;
+
+    if (this.mode === 'memory') {
+      return true;
+    }
+
     try {
-      const result = await this.client!.ping();
+      const result = await this.redisClient!.ping();
       return result === 'PONG';
     } catch {
       return false;
+    }
+  }
+
+  // --- Cleanup (called by framework on shutdown) ---
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.redisClient) {
+      this.redisClient.disconnect();
+      this.redisClient = null;
+    }
+    if (this.memoryStore) {
+      this.memoryStore.clear();
     }
   }
 }

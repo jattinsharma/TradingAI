@@ -170,7 +170,11 @@
                 <h2>Backend Connection</h2>
                 <div class="form-group">
                     <label>Backend URL</label>
-                    <input id="backend-url" value="http://localhost:3000" />
+                    <input id="backend-url" value="https://tradingai-4dq2.onrender.com" />
+                    <p style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+                        Production: https://tradingai-4dq2.onrender.com
+                        &nbsp;|&nbsp; Development: http://localhost:3000
+                    </p>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label>Email</label><input id="be-email" type="email" /></div>
@@ -230,6 +234,54 @@
         const bePassword = document.getElementById('be-password');
         const backendUrl = document.getElementById('backend-url');
 
+        // Load saved backend URL from storage
+        async function loadBackendUrl() {
+            try {
+                const result = await chrome.storage.local.get('backendUrl');
+                if (result.backendUrl && typeof result.backendUrl === 'string') {
+                    backendUrl.value = result.backendUrl;
+                }
+            } catch { /* use default */ }
+        }
+
+        // Save backend URL to storage when changed, and notify background service worker
+        backendUrl.addEventListener('change', async () => {
+            const url = backendUrl.value.trim();
+            if (url) {
+                try {
+                    await chrome.storage.local.set({ backendUrl: url });
+                    // Notify the background service worker to update its in-memory URL cache
+                    chrome.runtime.sendMessage({ type: 'UPDATE_BACKEND_URL', payload: { url } }, () => {
+                        if (chrome.runtime.lastError) {
+                            // Background might not be ready yet — that's ok, it reads from storage on init
+                        }
+                    });
+                    beStatus.textContent = 'URL saved';
+                    beStatus.style.color = 'var(--accent-green)';
+                    setTimeout(() => { beStatus.style.color = ''; }, 2000);
+                } catch { /* ignore */ }
+            }
+        });
+
+        // Also save URL before connecting and notify background
+        async function saveCurrentUrl() {
+            const url = backendUrl.value.trim();
+            if (url) {
+                try {
+                    await chrome.storage.local.set({ backendUrl: url });
+                    // Notify the background service worker to update its in-memory URL cache
+                    chrome.runtime.sendMessage({ type: 'UPDATE_BACKEND_URL', payload: { url } }, () => {
+                        if (chrome.runtime.lastError) {
+                            // Background might not be ready yet — that's ok, it reads from storage on init
+                        }
+                    });
+                } catch { /* ignore */ }
+            }
+        }
+
+        // Load saved URL on page load
+        loadBackendUrl();
+
         beConnectBtn.addEventListener('click', async () => {
             const email = beEmail.value.trim();
             const password = bePassword.value.trim();
@@ -237,6 +289,9 @@
             beConnectBtn.disabled = true;
             beConnectBtn.textContent = 'Connecting...';
             try {
+                // Save the current URL before connecting
+                await saveCurrentUrl();
+
                 const result = await sendMsg({ type: 'BACKEND_LOGIN', payload: { email, password } });
                 if (result?.success) {
                     beStatus.textContent = 'Connected!';

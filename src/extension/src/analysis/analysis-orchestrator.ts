@@ -1,16 +1,22 @@
-// Analysis orchestrator - coordinates different analysis engines
-import { TechnicalAnalysisEngine } from './engines/technical-analysis-engine';
-import { PatternRecognitionEngine } from './engines/pattern-recognition-engine';
-import { TrendAnalysisEngine } from './engines/trend-analysis-engine';
-import { SupportResistanceEngine } from './engines/support-resistance-engine';
-import { VolumeAnalysisEngine } from './engines/volume-analysis-engine';
-import { MomentumAnalysisEngine } from './engines/momentum-analysis-engine';
-import { NewsAnalysisEngine } from './engines/news-analysis-engine';
-import { SentimentAnalysisEngine } from './engines/sentiment-analysis-engine';
-import { RiskAnalysisEngine } from './engines/risk-analysis-engine';
-import { PortfolioAnalysisEngine } from './engines/portfolio-analysis-engine';
-import { TradePlanningEngine } from './engines/trade-planning-engine';
-import { AIExplanationEngine } from './engines/ai-explanation-engine';
+/**
+ * Analysis Orchestrator
+ *
+ * Coordinates analysis by delegating to the TechnicalAnalysisEngine
+ * and providing backward-compatible mapping to the legacy AnalysisResult format.
+ *
+ * Architecture:
+ *   Orchestrator.analyze()
+ *     └── TechnicalAnalysisEngine.analyze()  ← single real engine
+ *           ├── SignalScoringEngine          ← weighted multi-indicator scoring
+ *           ├── TradeSetupEngine             ← ATR-based entry/SL/TP/RR
+ *           ├── ReasoningEngine              ← human-readable reasoning
+ *           └── PatternRecognitionEngine     ← candlestick patterns from OHLCV
+ *     └── mapToLegacyFormat()               ← backward-compatible shape for UI/background
+ */
+
+import { TechnicalAnalysisEngine, AnalysisOutput } from './engines/technical-analysis-engine';
+import { EngineTechnicalResult } from '../shared/analysis-response.types';
+import { MarketIntelligenceEngine, MarketIntelligenceOutput } from './engines/market-intelligence-engine';
 
 export interface AnalysisResult {
   symbol: string;
@@ -25,6 +31,13 @@ export interface AnalysisResult {
     volatility: { signal: 'HIGH' | 'LOW' | 'NEUTRAL'; strength: number };
   };
   reasoning: string;
+  currentPrice?: number;
+  riskLevel?: string;
+  entryPrice?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  riskRewardRatio?: number;
+  // Legacy engines object — populated for backward compatibility
   engines: {
     technical: any;
     pattern: any;
@@ -43,323 +56,167 @@ export interface AnalysisResult {
 
 export class AnalysisOrchestrator {
   private technicalEngine: TechnicalAnalysisEngine;
-  private patternEngine: PatternRecognitionEngine;
-  private trendEngine: TrendAnalysisEngine;
-  private srEngine: SupportResistanceEngine;
-  private volumeEngine: VolumeAnalysisEngine;
-  private momentumEngine: MomentumAnalysisEngine;
-  private newsEngine: NewsAnalysisEngine;
-  private sentimentEngine: SentimentAnalysisEngine;
-  private riskEngine: RiskAnalysisEngine;
-  private portfolioEngine: PortfolioAnalysisEngine;
-  private tradePlanningEngine: TradePlanningEngine;
-  private aiExplanationEngine: AIExplanationEngine;
+  private marketIntelligence: MarketIntelligenceEngine;
 
   constructor() {
     this.technicalEngine = new TechnicalAnalysisEngine();
-    this.patternEngine = new PatternRecognitionEngine();
-    this.trendEngine = new TrendAnalysisEngine();
-    this.srEngine = new SupportResistanceEngine();
-    this.volumeEngine = new VolumeAnalysisEngine();
-    this.momentumEngine = new MomentumAnalysisEngine();
-    this.newsEngine = new NewsAnalysisEngine();
-    this.sentimentEngine = new SentimentAnalysisEngine();
-    this.riskEngine = new RiskAnalysisEngine();
-    this.portfolioEngine = new PortfolioAnalysisEngine();
-    this.tradePlanningEngine = new TradePlanningEngine();
-    this.aiExplanationEngine = new AIExplanationEngine();
+    this.marketIntelligence = new MarketIntelligenceEngine();
   }
 
   async analyze(symbol: string, timeframe: string = '1D', platform: string = ''): Promise<AnalysisResult> {
     try {
-      // Run all analysis engines except AI explanation in parallel
-      const [
-        technicalResult,
-        patternResult,
-        trendResult,
-        srResult,
-        volumeResult,
-        momentumResult,
-        newsResult,
-        sentimentResult,
-        riskResult,
-        portfolioResult,
-        tradePlanningResult
-      ] = await Promise.all([
-        this.technicalEngine.analyze(symbol, timeframe, platform),
-        this.patternEngine.analyze(symbol, timeframe),
-        this.trendEngine.analyze(symbol, timeframe),
-        this.srEngine.analyze(symbol, timeframe),
-        this.volumeEngine.analyze(symbol, timeframe),
-        this.momentumEngine.analyze(symbol, timeframe),
-        this.newsEngine.analyze(symbol, timeframe),
-        this.sentimentEngine.analyze(symbol, timeframe),
-        this.riskEngine.analyze(symbol, timeframe),
-        this.portfolioEngine.analyze(symbol, timeframe),
-        this.tradePlanningEngine.analyze(symbol, timeframe)
-      ]);
+      // ── Run the single real analysis engine ──
+      const output = await this.technicalEngine.analyze(symbol, timeframe, platform);
 
-      // Run AI explanation engine with results from ALL engines including trade planning
-      const aiExplanationResult = await this.aiExplanationEngine.analyze(symbol, timeframe, {
-        technical: technicalResult,
-        pattern: patternResult,
-        trend: trendResult,
-        supportResistance: srResult,
-        volume: volumeResult,
-        momentum: momentumResult,
-        risk: riskResult,
-        portfolio: portfolioResult,
-        tradePlanning: tradePlanningResult
-      });
+      // ── Generate market intelligence from the analysis output ──
+      const intelligence = this.marketIntelligence.generate(output);
 
-      // Combine results into a final recommendation
-      const combinedResult = this.combineAnalysisResults(
-        symbol,
-        timeframe,
-        technicalResult,
-        patternResult,
-        trendResult,
-        srResult,
-        volumeResult,
-        momentumResult,
-        newsResult,
-        sentimentResult,
-        riskResult,
-        portfolioResult,
-        tradePlanningResult,
-        aiExplanationResult
-      );
-
-      return combinedResult;
+      // ── Map to backward-compatible AnalysisResult ──
+      return this.mapToLegacyFormat(output, intelligence);
     } catch (error) {
-      console.error('Analysis orchestration failed:', error);
-      // Return a default/fallback analysis
+      console.error('[Orchestrator] Analysis failed:', error);
       return this.getDefaultAnalysis(symbol, timeframe);
     }
   }
 
-  private combineAnalysisResults(
-    symbol: string,
-    timeframe: string,
-    technical: any,
-    pattern: any,
-    trend: any,
-    sr: any,
-    volume: any,
-    momentum: any,
-    news: any,
-    sentiment: any,
-    risk: any,
-    portfolio: any,
-    tradePlanning: any,
-    aiExplanation: any
-  ): AnalysisResult {
-    // Weight different analysis types
-    const weights = {
-      technical: 0.15,
-      trend: 0.15,
-      momentum: 0.10,
-      volume: 0.05,
-      supportResistance: 0.10,
-      pattern: 0.10,
-      news: 0.05,
-      sentiment: 0.05,
-      risk: 0.05, // Risk is inversely weighted (lower risk = higher score)
-      portfolio: 0.05,
-      tradePlanning: 0.10,
-      aiExplanation: 0.05
-    };
-
-    // Calculate weighted score for buy/sell signals
-    let bullishScore = 0;
-    let bearishScore = 0;
-
-    // Technical analysis contribution
-    if (technical.signal === 'BUY') bullishScore += technical.strength * weights.technical;
-    if (technical.signal === 'SELL') bearishScore += technical.strength * weights.technical;
-
-    // Trend analysis contribution
-    if (trend.signal === 'UP') bullishScore += trend.strength * weights.trend;
-    if (trend.signal === 'DOWN') bearishScore += trend.strength * weights.trend;
-
-    // Momentum contribution
-    if (momentum.signal === 'UP') bullishScore += momentum.strength * weights.momentum;
-    if (momentum.signal === 'DOWN') bearishScore += momentum.strength * weights.momentum;
-
-    // Volume confirmation
-    if (volume.signal === 'HIGH') {
-      // High volume confirms the direction of other signals
-      if (bullishScore > bearishScore) bullishScore *= 1.1;
-      else if (bearishScore > bullishScore) bearishScore *= 1.1;
-    }
-
-    // Support/Resistance
-    if (sr.signal === 'BOUNCE_UP') bullishScore += sr.strength * weights.supportResistance;
-    if (sr.signal === 'REJECT_DOWN') bearishScore += sr.strength * weights.supportResistance;
-
-    // Pattern recognition
-    if (pattern.signal === 'BULLISH') bullishScore += pattern.strength * weights.pattern;
-    if (pattern.signal === 'BEARISH') bearishScore += pattern.strength * weights.pattern;
-
-    // News sentiment
-    if (news.signal === 'BULLISH') bullishScore += news.strength * weights.news;
-    if (news.signal === 'BEARISH') bearishScore += news.strength * weights.news;
-
-    // Overall sentiment
-    if (sentiment.signal === 'BULLISH') bullishScore += sentiment.strength * weights.sentiment;
-    if (sentiment.signal === 'BEARISH') bearishScore += sentiment.strength * weights.sentiment;
-
-    // Risk (inverse weighting - lower risk = higher score)
-    const riskScore = 1 - risk.riskScore; // Convert to safety score
-    if (riskScore > 0.5) {
-      // Favor the current direction if risk is low
-      if (bullishScore > bearishScore) bullishScore += riskScore * weights.risk;
-      else if (bearishScore > bullishScore) bearishScore += riskScore * weights.risk;
-    }
-
-    // Portfolio fit
-    if (portfolio.signal === 'BULLISH') bullishScore += portfolio.strength * weights.portfolio;
-    if (portfolio.signal === 'BEARISH') bearishScore += portfolio.strength * weights.portfolio;
-
-    // Trade planning
-    if (tradePlanning.signal === 'BUY') bullishScore += tradePlanning.confidence * weights.tradePlanning;
-    if (tradePlanning.signal === 'SELL') bearishScore += tradePlanning.confidence * weights.tradePlanning;
-
-    // AI explanation (use its confidence as a signal strength)
-    if (aiExplanation.confidence > 0.5) {
-      // Determine bias from AI explanation
-      const explanation = aiExplanation.explanation || '';
-      const bullishMentions = (explanation.match(/bullish/gi) || []).length;
-      const bearishMentions = (explanation.match(/bearish/gi) || []).length;
-
-      if (bullishMentions > bearishMentions) {
-        bullishScore += aiExplanation.confidence * weights.aiExplanation;
-      } else if (bearishMentions > bullishMentions) {
-        bearishScore += aiExplanation.confidence * weights.aiExplanation;
-      }
-    }
-
-    // Determine final recommendation
-    const netScore = bullishScore - bearishScore;
-    let recommendation: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL' = 'HOLD';
-    let confidence = 50; // Base confidence
-
-    if (netScore > 0.2) {
-      recommendation = netScore > 0.4 ? 'STRONG_BUY' : 'BUY';
-      confidence = 50 + (netScore * 125); // Scale to 50-100+
-    } else if (netScore < -0.2) {
-      recommendation = netScore < -0.4 ? 'STRONG_SELL' : 'SELL';
-      confidence = 50 + (Math.abs(netScore) * 125); // Scale to 50-100+
-    } else {
-      recommendation = 'HOLD';
-      confidence = 50 - (Math.abs(netScore) * 100); // Reduce confidence for neutral
-    }
-
-    // Ensure confidence is within bounds
-    confidence = Math.max(0, Math.min(100, confidence));
-
-    // Generate reasoning
-    const reasoning = this.generateReasoning(
-      technical, pattern, trend, sr, volume, momentum,
-      news, sentiment, risk, portfolio, tradePlanning, aiExplanation, netScore
-    );
-
+  /** Expose market intelligence for direct access by UI components */
+  async analyzeWithIntelligence(symbol: string, timeframe: string = '1D', platform: string = ''): Promise<{ analysis: AnalysisResult; intelligence: MarketIntelligenceOutput }> {
+    const output = await this.technicalEngine.analyze(symbol, timeframe, platform);
+    const intelligence = this.marketIntelligence.generate(output);
     return {
-      symbol,
-      timeframe,
-      timestamp: Date.now(),
-      recommendation,
-      confidence,
-      indicators: {
-        trend: { signal: trend.signal, strength: trend.strength },
-        momentum: { signal: momentum.signal, strength: momentum.strength },
-        volume: { signal: volume.signal, strength: volume.strength },
-        volatility: { signal: 'NEUTRAL', strength: 0.5 } // Simplified for now
-      },
-      reasoning,
-      engines: {
-        technical,
-        pattern,
-        trend,
-        supportResistance: sr,
-        volume,
-        momentum,
-        news,
-        sentiment,
-        risk,
-        portfolio,
-        tradePlanning,
-        aiExplanation
-      }
+      analysis: this.mapToLegacyFormat(output, intelligence),
+      intelligence,
     };
   }
 
-  private generateReasoning(
-    technical: any,
-    pattern: any,
-    trend: any,
-    sr: any,
-    volume: any,
-    momentum: any,
-    news: any,
-    sentiment: any,
-    risk: any,
-    portfolio: any,
-    tradePlanning: any,
-    aiExplanation: any,
-    netScore: number
-  ): string {
-    let reasoning = 'Analysis based on multiple factors: ';
+  /**
+   * Map the new flat AnalysisOutput to the legacy AnalysisResult format.
+   * All consumers (overlay, popup, background auto-save) expect the old shape.
+   */
+  private mapToLegacyFormat(output: AnalysisOutput, intelligence?: MarketIntelligenceOutput): AnalysisResult {
+    const tech: EngineTechnicalResult = {
+      signal: output.recommendation === 'STRONG_BUY' || output.recommendation === 'BUY'
+        ? 'BUY'
+        : output.recommendation === 'STRONG_SELL' || output.recommendation === 'SELL'
+          ? 'SELL'
+          : 'NEUTRAL',
+      strength: output.confidence / 100,
+      indicators: output.indicatorSummary as any,
+    };
 
-    if (technical.signal !== 'NEUTRAL') {
-      reasoning += `Technical shows ${technical.signal.toLowerCase()} signal (strength: ${Math.round(technical.strength * 100)}%). `;
+    const trendSignal = output.trend === 'BULLISH' ? 'UP' : output.trend === 'BEARISH' ? 'DOWN' : 'NEUTRAL';
+
+    // Derive momentum signal from indicators
+    const rsi = output.indicatorSummary.rsi;
+    let momentumSignal: 'UP' | 'DOWN' | 'NEUTRAL' = 'NEUTRAL';
+    let momentumStrength = 0.5;
+    if (rsi > 0) {
+      if (rsi > 60) { momentumSignal = 'UP'; momentumStrength = 0.6; }
+      else if (rsi < 40) { momentumSignal = 'DOWN'; momentumStrength = 0.6; }
     }
 
-    if (trend.signal !== 'NEUTRAL') {
-      reasoning += `Trend is ${trend.signal.toLowerCase()} (strength: ${Math.round(trend.strength * 100)}%). `;
+    // Derive volume signal
+    const vol = output.indicatorSummary.volume;
+    const avgVol = output.indicatorSummary.avgVolume;
+    let volumeSignal: 'HIGH' | 'LOW' | 'NEUTRAL' = 'NEUTRAL';
+    let volumeStrength = 0.5;
+    if (vol > 0 && avgVol > 0) {
+      const ratio = vol / avgVol;
+      if (ratio > 1.5) { volumeSignal = 'HIGH'; volumeStrength = 0.7; }
+      else if (ratio < 0.5) { volumeSignal = 'LOW'; volumeStrength = 0.6; }
     }
 
-    if (momentum.signal !== 'NEUTRAL') {
-      reasoning += `Momentum is ${momentum.signal.toLowerCase()} (strength: ${Math.round(momentum.strength * 100)}%). `;
-    }
+    const volSignal = output.volatility;
+    let volSignalEnum: 'HIGH' | 'LOW' | 'NEUTRAL' = 'NEUTRAL';
+    let volStrength = 0.5;
+    if (volSignal === 'HIGH') { volSignalEnum = 'HIGH'; volStrength = 0.7; }
+    else if (volSignal === 'LOW') { volSignalEnum = 'LOW'; volStrength = 0.6; }
 
-    if (volume.signal !== 'NEUTRAL') {
-      reasoning += `Volume is ${volume.signal.toLowerCase()} (strength: ${Math.round(volume.strength * 100)}%). `;
-    }
-
-    if (sr.signal !== 'NEUTRAL') {
-      reasoning += `Support/Resistance indicates ${sr.signal.replace('_', ' ').toLowerCase()} (strength: ${Math.round(sr.strength * 100)}%). `;
-    }
-
-    if (pattern.signal !== 'NEUTRAL') {
-      reasoning += `Pattern recognition suggests ${pattern.signal.toLowerCase()} signal (strength: ${Math.round(pattern.strength * 100)}%). `;
-    }
-
-    if (news.signal !== 'NEUTRAL') {
-      reasoning += `News sentiment is ${news.signal.toLowerCase()} (strength: ${Math.round(news.strength * 100)}%). `;
-    }
-
-    if (sentiment.signal !== 'NEUTRAL') {
-      reasoning += `Overall sentiment is ${sentiment.signal.toLowerCase()} (strength: ${Math.round(sentiment.strength * 100)}%). `;
-    }
-
-    if (risk.riskLevel !== 'MEDIUM') {
-      reasoning += `Risk level is ${risk.riskLevel.toLowerCase()} (score: ${Math.round(risk.riskScore * 100)}%). `;
-    }
-
-    if (portfolio.signal !== 'NEUTRAL') {
-      reasoning += `Portfolio fit suggests ${portfolio.signal.toLowerCase()} (strength: ${Math.round(portfolio.strength * 100)}%). `;
-    }
-
-    if (tradePlanning.signal !== 'WAIT') {
-      reasoning += `Trade planning suggests ${tradePlanning.signal.toLowerCase()} with ${Math.round(
-        tradePlanning.confidence * 100
-      )}% confidence. `;
-    }
-
-    reasoning += `Overall signal: ${netScore > 0 ? 'bullish' : 'bearish'} (${Math.round(Math.abs(netScore) * 100)}% confidence).`;
-
-    return reasoning;
+    return {
+      symbol: output.symbol,
+      timeframe: output.timeframe,
+      timestamp: Date.now(),
+      recommendation: output.recommendation,
+      confidence: output.confidence,
+      currentPrice: output.indicatorSummary.ema26 || output.entryPrice || 0,
+      riskLevel: this.inferRiskLevel(output),
+      entryPrice: output.entryPrice,
+      stopLoss: output.stopLoss,
+      takeProfit: output.takeProfit1,
+      riskRewardRatio: output.riskReward,
+      reasoning: output.reasoning.join('. ') || 'Analysis completed.',
+      indicators: {
+        trend: { signal: trendSignal, strength: this.trendStrength(output) },
+        momentum: { signal: momentumSignal, strength: momentumStrength },
+        volume: { signal: volumeSignal, strength: volumeStrength },
+        volatility: { signal: volSignalEnum, strength: volStrength },
+      },
+      engines: {
+        technical: tech,
+        pattern: {
+          signal: output.patterns.signal === 'BULLISH' ? 'BUY' : output.patterns.signal === 'BEARISH' ? 'SELL' : 'NEUTRAL',
+          strength: output.patterns.strength,
+          pattern: output.patterns.patterns[0] || 'NONE',
+          confidence: output.patterns.strength,
+        },
+        trend: {
+          signal: trendSignal,
+          strength: this.trendStrength(output),
+        },
+        supportResistance: {
+          signal: 'NEUTRAL',
+          strength: 0.5,
+          levels: {
+            resistance1: safeFloor(output.indicatorSummary.bollingerUpper),
+            resistance2: 0,
+            support1: safeFloor(output.indicatorSummary.bollingerLower),
+            support2: 0,
+            currentPrice: safeFloor(output.indicatorSummary.ema26 || output.entryPrice),
+          },
+        },
+        volume: { signal: volumeSignal, strength: volumeStrength },
+        momentum: { signal: momentumSignal, strength: momentumStrength },
+        news: { signal: 'NEUTRAL', strength: 0.5, articles: [], sentiment: 0 },
+        sentiment: { signal: 'NEUTRAL', strength: 0.5 },
+        risk: {
+          signal: output.risks.length > 0 ? 'CAUTION' : 'NEUTRAL',
+          strength: output.risks.length > 0 ? 0.6 : 0.4,
+          riskLevel: this.inferRiskLevel(output),
+          riskScore: this.inferRiskScore(output),
+          metrics: {
+            volatility: safeFloor(output.indicatorSummary.atr),
+            maxDrawdown: 0,
+            sharpeRatio: 0,
+            valueAtRisk95: 0,
+            beta: 1.0,
+            correlationToMarket: 0.5,
+          },
+        },
+        portfolio: { signal: 'NEUTRAL', strength: 0.5 },
+        tradePlanning: {
+          signal: output.recommendation === 'HOLD' ? 'WAIT' : output.recommendation,
+          confidence: output.confidence / 100,
+          tradeSetup: {
+            entryPrice: safeFloor(output.entryPrice),
+            stopLoss: safeFloor(output.stopLoss),
+            takeProfit: safeFloor(output.takeProfit1),
+            riskRewardRatio: output.riskReward,
+            positionSizeSuggestion: 0,
+            maxHoldTime: this.inferHoldTime(output.timeframe),
+          },
+          reasoning: output.reasoning.join('. ') || 'Analysis completed.',
+        },
+        aiExplanation: {
+          explanation: output.reasoning.join('\n') || 'Analysis completed.',
+          confidence: output.confidence / 100,
+          keyFactors: output.keyFactors,
+          risks: output.risks,
+          timeframeSuitability: this.inferTimeframeSuitability(output),
+          // Add market intelligence to the result for UI consumption
+          marketIntelligence: intelligence || null,
+        },
+      },
+    };
   }
 
   private getDefaultAnalysis(symbol: string, timeframe: string): AnalysisResult {
@@ -373,23 +230,74 @@ export class AnalysisOrchestrator {
         trend: { signal: 'NEUTRAL', strength: 0 },
         momentum: { signal: 'NEUTRAL', strength: 0 },
         volume: { signal: 'NEUTRAL', strength: 0 },
-        volatility: { signal: 'NEUTRAL', strength: 0 }
+        volatility: { signal: 'NEUTRAL', strength: 0 },
       },
       reasoning: 'Insufficient data for analysis.',
       engines: {
-        technical: { signal: 'NEUTRAL', strength: 0 },
-        pattern: { signal: 'NEUTRAL', strength: 0 },
+        technical: { signal: 'NEUTRAL', strength: 0, indicators: {} },
+        pattern: { signal: 'NEUTRAL', strength: 0, pattern: 'NONE', confidence: 0 },
         trend: { signal: 'NEUTRAL', strength: 0 },
-        supportResistance: { signal: 'NEUTRAL', strength: 0 },
+        supportResistance: { signal: 'NEUTRAL', strength: 0, levels: {} },
         volume: { signal: 'NEUTRAL', strength: 0 },
         momentum: { signal: 'NEUTRAL', strength: 0 },
-        news: { signal: 'NEUTRAL', strength: 0 },
+        news: { signal: 'NEUTRAL', strength: 0, articles: [], sentiment: 0 },
         sentiment: { signal: 'NEUTRAL', strength: 0 },
         risk: { riskLevel: 'UNKNOWN', riskScore: 0 },
         portfolio: { signal: 'NEUTRAL', strength: 0 },
-        tradePlanning: { signal: 'WAIT', confidence: 0 },
-        aiExplanation: { explanation: 'Insufficient data for analysis.', confidence: 0 }
-      }
+        tradePlanning: { signal: 'WAIT', confidence: 0, tradeSetup: null, reasoning: '' },
+        aiExplanation: { explanation: 'Insufficient data for analysis.', confidence: 0, keyFactors: [], risks: [] },
+      },
     };
   }
+
+  // ── Helpers ──
+
+  private trendStrength(output: AnalysisOutput): number {
+    const rsi = output.indicatorSummary.rsi;
+    if (!isFinite(rsi)) return 0.5;
+    const trend = output.trend;
+    if (trend === 'BULLISH') return 0.5 + (rsi > 50 ? (rsi - 50) / 100 : 0);
+    if (trend === 'BEARISH') return 0.5 + (rsi < 50 ? (50 - rsi) / 100 : 0);
+    return 0.5;
+  }
+
+  private inferRiskLevel(output: AnalysisOutput): string {
+    if (output.risks.length >= 3 || output.volatility === 'HIGH') return 'HIGH';
+    if (output.risks.length >= 1 || output.confidence < 40) return 'MEDIUM';
+    return 'LOW';
+  }
+
+  private inferRiskScore(output: AnalysisOutput): number {
+    if (output.volatility === 'HIGH') return 0.7;
+    if (output.confidence > 70) return 0.2;
+    if (output.confidence > 40) return 0.5;
+    return 0.8;
+  }
+
+  private inferHoldTime(timeframe: string): string {
+    switch (timeframe.toUpperCase()) {
+      case '1M': case '5M': case '15M': return 'minutes';
+      case '30M': case '1H': case '2H': case '4H': return 'hours';
+      case '1D': return 'days';
+      case '1W': return 'weeks';
+      default: return 'N/A';
+    }
+  }
+
+  private inferTimeframeSuitability(output: AnalysisOutput): string {
+    const rsi = output.indicatorSummary.rsi;
+    if (!isFinite(rsi)) return 'Neutral suitability';
+    const tf = output.timeframe.toUpperCase();
+    if (['15M', '30M', '1H'].includes(tf)) {
+      return rsi > 40 && rsi < 60 ? 'Well-suited for short-term trading' : 'Momentum moderate for short-term';
+    }
+    if (['4H', '1D'].includes(tf)) {
+      return output.trend !== 'NEUTRAL' ? 'Good trend alignment for medium-term' : 'Unclear trend for medium-term';
+    }
+    return 'Neutral suitability for this timeframe';
+  }
+}
+
+function safeFloor(v: number): number {
+  return isFinite(v) ? Math.round(v * 100) / 100 : 0;
 }

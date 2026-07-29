@@ -80,3 +80,27 @@ export function truncateString(str: string, maxLength: number): string {
   if (str.length <= maxLength) return str;
   return str.substr(0, maxLength) + '...';
 }
+
+/**
+ * Normalize a timeframe string from TradingView format to the canonical format.
+ * Examples: "60" → "1H", "D" → "1D", "5" → "5m", "W" → "1W"
+ */
+export function normalizeTimeframe(raw: string): string {
+  const s = raw.trim().toUpperCase();
+
+  const MAP: Record<string, string> = {
+    '60': '1H', '120': '2H', '180': '3H', '240': '4H',
+    '360': '6H', '720': '12H',
+    'D': '1D', '1D': '1D', 'W': '1W', '1W': '1W', 'M': '1M', '1M': '1M',
+  };
+
+  if (MAP[s]) return MAP[s];
+
+  // Patterns like "1", "5", "15", "30" (minutes)
+  if (/^\d+$/.test(s)) return s + 'm';
+
+  // Patterns like "1H", "4H"
+  if (/^\d+[Hh]$/.test(s)) return s.toUpperCase();
+
+  return s;
+}

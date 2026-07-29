@@ -18,17 +18,31 @@ async function bootstrap() {
   // Security: Helmet for security headers
   app.use(helmet());
 
-  // Security: CORS with support for both browser frontend AND Chrome extension service worker
-  // Chrome extension service workers use chrome-extension://<id> as origin.
-  // In production, set CORS_ORIGIN to a comma-separated list of allowed origins.
-  // For development, we allow all origins so the extension can connect freely.
+  // Security: CORS with support for Chrome extension origins.
+  // Chrome extensions use chrome-extension://<extension-id> as their origin,
+  // which cannot be known at build time. The cors npm package does NOT support
+  // wildcard patterns like 'chrome-extension://*' in origin arrays.
+  //
+  // Strategy:
+  // - If CORS_ORIGIN env var is set, parse it (comma-separated).
+  //   If any entry is '*' or 'chrome-extension://*', use `true` (allow all).
+  // - If CORS_ORIGIN is NOT set, use `true` in both development AND production
+  //   because the Chrome extension's origin is dynamic and unpredictable.
   const corsOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',')
-    : process.env.NODE_ENV === 'production'
-      ? ['http://localhost:3000']
-      : true; // Allow all origins in development (needed for chrome-extension:// origins)
+    ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+    : true;
+
+  // Normalize: if any wildcard pattern ('*' or 'chrome-extension://*') is in
+  // the list, use `true` (allow all) because the cors package does exact string
+  // matching and does NOT support wildcard patterns in origin arrays.
+  const normalizedOrigin = Array.isArray(corsOrigins)
+    ? corsOrigins.some(o => o === '*' || o === 'chrome-extension://*')
+      ? true
+      : corsOrigins
+    : corsOrigins;
+
   app.enableCors({
-    origin: corsOrigins,
+    origin: normalizedOrigin,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
     credentials: true,

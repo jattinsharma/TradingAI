@@ -6,9 +6,12 @@
 import { sendMessageToBackend, sendMessageToPopup, onMessage } from '../utils/messaging';
 import { WebsiteDetector } from '../modules/website-detector/website-detector';
 import { ChartOverlay } from '../overlay/chart-overlay';
+import { isTradingViewPage, extractFromTradingViewDOM } from '../modules/tradingview';
+import { TradingViewObserver } from '../modules/tradingview/tradingview-observer';
 
 // Initialize variables
 let chartOverlay: ChartOverlay | null = null;
+let tvObserver: TradingViewObserver | null = null; // TradingView DOM observer (module-level for cleanup)
 let isInitialized = false;
 let lastAnalysisTime = 0;
 const ANALYSIS_COOLDOWN = 30000; // 30 seconds between automatic analyses
@@ -23,7 +26,6 @@ async function initialize(): Promise<void> {
   isInitializing = true;
 
   try {
-    // Get current URL for logging
     const currentUrl = window.location.hostname;
     console.log('[Content Script] Initializing on:', currentUrl);
 
@@ -45,8 +47,6 @@ async function initialize(): Promise<void> {
     // Create chart overlay
     const overlay = new ChartOverlay();
     await overlay.initialize();
-
-    // If we get here, initialization succeeded
     chartOverlay = overlay;
     isInitialized = true;
 
@@ -56,12 +56,28 @@ async function initialize(): Promise<void> {
     // Set up periodic analysis (if enabled)
     setupPeriodicAnalysis();
 
+    // If on TradingView, start DOM observer for auto-detection
+    if (isTradingViewPage()) {
+      console.log('[Content Script] Starting TradingView DOM observer...');
+      tvObserver = new TradingViewObserver();
+      tvObserver.start((changeEvent) => {
+        console.log('[Content Script] TradingView chart change detected:', changeEvent);
+        // When symbol or timeframe changes, auto-request analysis
+        if (changeEvent.type === 'symbol' || changeEvent.type === 'timeframe') {
+          setTimeout(() => {
+            requestAnalysisIfNeeded();
+          }, 2000);
+        }
+      });
+      console.log('[Content Script] TradingView observer active');
+    }
+
     // Notify background script that content script is ready
     try {
       await sendMessageToBackend({
         type: 'CONTENT_SCRIPT_READY',
         payload: {
-          platform: WebsiteDetector.detectPlatform(),
+          platform,
           url: window.location.href,
           timestamp: Date.now()
         }
@@ -76,7 +92,7 @@ async function initialize(): Promise<void> {
     }, 3000);
   } catch (error) {
     console.error('[Content Script] Failed to initialize content script:', error);
-    chartOverlay = null; // ensure it's null on failure
+    chartOverlay = null;
     isInitialized = false;
   } finally {
     isInitializing = false;
@@ -182,9 +198,11 @@ async function handleMessage(message: any, sendResponse: (response?: any) => voi
   }
 }
 
-// Perform analysis and update UI
+/**
+ * Perform analysis — collect real market data from TradingView and send to background.
+ * This is the MAIN entry point for market analysis from the content script.
+ */
 async function performAnalysis(payload = {}): Promise<void> {
-  // Check if we're ready
   if (!isInitialized) {
     await initialize();
     if (!isInitialized) {
@@ -202,13 +220,27 @@ async function performAnalysis(payload = {}): Promise<void> {
     const now = Date.now();
     if (!force && (now - lastAnalysisTime) < ANALYSIS_COOLDOWN) {
       console.log('[Content Script] Analysis cooldown active, skipping');
-      return; // Still in cooldown period
+      return;
     }
 
-    // Get current symbol, timeframe, and platform from the page
-    const symbol = WebsiteDetector.getSymbol();
-    const timeframe = WebsiteDetector.getTimeframe();
+    // Get symbol, timeframe, and platform from the page
     const platform = WebsiteDetector.detectPlatform();
+    let symbol: string;
+    let timeframe: string;
+
+    // If on TradingView, use the dedicated DOM extractor for best accuracy
+    // Only extract symbol/timeframe/price from DOM — background handles all API calls
+    if (isTradingViewPage()) {
+      const domData = extractFromTradingViewDOM();
+      symbol = domData.symbol;
+      timeframe = domData.timeframe;
+      console.log(`[Content Script] DOM extracted: ${symbol} ${timeframe}, price=${domData.currentPrice}`);
+    } else {
+      // Fallback for other platforms
+      symbol = WebsiteDetector.getSymbol();
+      timeframe = WebsiteDetector.getTimeframe();
+      console.log(`[Content Script] Using platform detection: ${symbol} ${timeframe} on ${platform}`);
+    }
 
     console.log(`[Content Script] Requesting analysis for ${symbol} (${timeframe}) on ${platform}`);
 
@@ -216,7 +248,6 @@ async function performAnalysis(payload = {}): Promise<void> {
     await chartOverlay.showLoading(`Analyzing ${symbol}...`);
 
     // Request analysis from background script
-    // Include the platform so the adapter manager can select the right adapter
     let analysisResult: any;
     try {
       analysisResult = await sendMessageToBackend({
@@ -224,19 +255,12 @@ async function performAnalysis(payload = {}): Promise<void> {
         payload: {
           symbol,
           timeframe,
-          platform,  // ← critical: tells background which adapter to use
+          platform,
           force: true
         }
       });
     } catch (messageError: any) {
-      // sendMessageToBackend rejects on chrome.runtime.lastError — this happens when:
-      // 1. Service worker restarted mid-request ("Extension context invalidated")
-      // 2. Message channel timed out
-      // 3. No receiving extension endpoint
-      console.warn('[Content Script] sendMessageToBackend failed (non-critical if UPDATE_OVERLAY arrives separately):', messageError.message || messageError);
-      // The background also broadcasts results via UPDATE_OVERLAY,
-      // so the analysis may still display even if the direct response is lost.
-      // Return without error — UPDATE_OVERLAY handler will process the result.
+      console.warn('[Content Script] sendMessageToBackend failed:', messageError.message || messageError);
       return;
     }
 
@@ -248,14 +272,12 @@ async function performAnalysis(payload = {}): Promise<void> {
 
     // Update overlay with results
     if (analysisResult && !analysisResult.error) {
-      // Check if the result has the expected structure
       if (analysisResult.recommendation && typeof analysisResult.confidence === 'number') {
         console.log('[Content Script] Valid analysis result, updating overlay');
         await chartOverlay.updateAnalysis(analysisResult);
         lastAnalysisTime = Date.now();
       } else if (analysisResult.success === true) {
-        // Legacy response format - background still sends the result via UPDATE_OVERLAY
-        console.log('[Content Script] Legacy response received, waiting for UPDATE_OVERLAY');
+        console.log('[Content Script] Legacy response, waiting for UPDATE_OVERLAY');
       } else {
         console.warn('[Content Script] Unexpected response format:', analysisResult);
       }
@@ -267,7 +289,7 @@ async function performAnalysis(payload = {}): Promise<void> {
     if (chartOverlay) {
       await chartOverlay.showError('Analysis failed: ' + (error instanceof Error ? error.message : String(error)));
     }
-    throw error; // Re-throw so handleMessage can send error response
+    throw error;
   }
 }
 
@@ -338,6 +360,10 @@ new MutationObserver(() => {
     if (chartOverlay) {
       chartOverlay.destroy();
       chartOverlay = null;
+    }
+    if (tvObserver) {
+      tvObserver.stop();
+      tvObserver = null;
     }
     setTimeout(() => {
       initialize();

@@ -14,7 +14,9 @@ interface AuthenticatedSocket extends Socket {
 
 @NestWsGateway({
   cors: {
-    origin: process.env.CORS_ORIGIN?.split(',') || ['http://localhost:3000'],
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+      : true,
     credentials: true,
   },
   namespace: '/ws',

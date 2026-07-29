@@ -31,6 +31,8 @@ import { AuditModule } from '../modules/audit/audit.module';
 import { AnalysisModule } from '../modules/analysis/analysis.module';
 import { TradeJournalModule } from '../modules/trade-journal/trade-journal.module';
 import { AiModule } from '../modules/ai/ai.module';
+import { PredictionsModule } from '../modules/predictions/predictions.module';
+import { PerformanceModule } from '../modules/performance/performance.module';
 
 @Module({
   imports: [
@@ -81,6 +83,8 @@ import { AiModule } from '../modules/ai/ai.module';
     AnalysisModule,
     TradeJournalModule,
     AiModule,
+    PredictionsModule,
+    PerformanceModule,
     CacheModule,
     LoggerModule,
     WebsocketModule,

@@ -6,6 +6,7 @@ import { StorageManager } from '../storage/storage-manager';
 import { AlarmManager } from '../alarms/alarm-manager';
 import { AnalysisOrchestrator } from '../analysis/analysis-orchestrator';
 import { tradingCopilotApi } from '../api/trading-copilot-api';
+import { getBackendUrl, saveBackendUrl, setBackendUrl as setCachedBackendUrl } from '../api/config';
 
 // Initialize managers
 let storage: StorageManager | null = null;
@@ -21,16 +22,46 @@ async function initialize(): Promise<boolean> {
     alarmManager = new AlarmManager();
     analysisOrchestrator = new AnalysisOrchestrator();
 
-    // Restore JWT token from storage if available
+    // Load backend URL from storage (defaults to production Render URL)
+    try {
+      const backendUrl = await getBackendUrl();
+      tradingCopilotApi.setBaseUrl(backendUrl);
+      console.log('[Background] Backend URL configured:', backendUrl);
+    } catch {
+      console.log('[Background] Using default backend URL');
+    }
+
+    // Restore tokens from storage if available
     try {
       const auth = await storage.get('backendAuth');
       if (auth?.jwtToken) {
         tradingCopilotApi.setJwtToken(auth.jwtToken);
         console.log('[Background] JWT token restored from storage');
       }
+      if (auth?.refreshToken) {
+        tradingCopilotApi.setRefreshToken(auth.refreshToken);
+        console.log('[Background] Refresh token restored from storage');
+      }
     } catch {
       // Non-critical - user can re-login
     }
+
+    // Attempt silent re-auth if we have a refresh token
+    if (tradingCopilotApi.getRefreshToken()) {
+      silentReAuth().catch(() => {
+        // Silent re-auth failed — user may need to log in again
+      });
+    }
+
+    // Register callback for when token refresh fails
+    tradingCopilotApi.setOnRefreshFailed(() => {
+      console.log('[Background] Token refresh failed — clearing stored auth');
+      storage?.remove('backendAuth').catch(() => {});
+      // Notify popup if open
+      chrome.runtime.sendMessage({ type: 'AUTH_EXPIRED' }, () => {
+        if (chrome.runtime.lastError) { /* popup closed — ignore */ }
+      });
+    });
 
     console.log('[Background] Service initialized');
     isInitialized = true;
@@ -211,6 +242,9 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
         return;
       case 'BACKEND_LOGIN':
         await handleBackendLogin(message.payload, sendResponse);
+        return;
+      case 'UPDATE_BACKEND_URL':
+        handleUpdateBackendUrl(message.payload, sendResponse);
         return;
       case 'BACKEND_LOGOUT':
         handleBackendLogout(sendResponse);
@@ -398,11 +432,10 @@ async function autoSaveAnalysis(analysis: any): Promise<void> {
     const tradePlan = analysis.engines?.tradePlanning?.tradeSetup;
     const aiExplanation = analysis.engines?.aiExplanation;
 
-    // Use the current price from technical indicators or fall back to 0
-    const techIndicators = analysis.engines?.technical?.indicators;
-    const currentPrice = (techIndicators && typeof techIndicators.atr === 'number' && isFinite(techIndicators.atr))
-      ? techIndicators.atr
-      : 0;
+    // Use direct fields from the AnalysisResult
+    const currentPrice = typeof analysis.currentPrice === 'number' && isFinite(analysis.currentPrice)
+      ? analysis.currentPrice
+      : (tradePlan?.entryPrice || 0);
 
     const payload = {
       symbol: analysis.symbol,
@@ -410,14 +443,14 @@ async function autoSaveAnalysis(analysis: any): Promise<void> {
       currentPrice,
       recommendation: analysis.recommendation,
       confidence: analysis.confidence,
-      entryPrice: tradePlan?.entryPrice,
-      stopLoss: tradePlan?.stopLoss,
-      takeProfit: tradePlan?.takeProfit,
-      riskRewardRatio: tradePlan?.riskRewardRatio,
+      entryPrice: analysis.entryPrice || tradePlan?.entryPrice,
+      stopLoss: analysis.stopLoss || tradePlan?.stopLoss,
+      takeProfit: analysis.takeProfit || tradePlan?.takeProfit,
+      riskRewardRatio: analysis.riskRewardRatio || tradePlan?.riskRewardRatio,
       reasoning: analysis.reasoning,
       indicators: analysis.indicators,
       signals: analysis.engines,
-      risks: aiExplanation?.risks || [],
+      risks: aiExplanation?.risks || analysis.engines?.aiExplanation?.risks || [],
       alternativeScenario: '',
       invalidationLevel: '',
       tradeDuration: tradePlan?.maxHoldTime,
@@ -493,6 +526,35 @@ async function handleGetSettings(sendResponse: (response?: any) => void): Promis
   }
 }
 
+/**
+ * Attempt silent re-authentication using the stored refresh token.
+ * Called on background service worker startup.
+ */
+async function silentReAuth(): Promise<void> {
+  try {
+    const success = await tradingCopilotApi.tryRefreshToken();
+    if (success) {
+      console.log('[Background] Silent re-auth succeeded');
+      // Update stored tokens
+      const auth = await storage?.get('backendAuth');
+      if (auth && storage) {
+        await storage.set('backendAuth', {
+          ...auth,
+          jwtToken: tradingCopilotApi.getJwtToken(),
+          refreshToken: tradingCopilotApi.getRefreshToken(),
+          connectedAt: Date.now(),
+        });
+      }
+    } else {
+      console.log('[Background] Silent re-auth failed (refresh token expired or invalid)');
+      // Tokens are already cleared by tryRefreshToken
+      storage?.remove('backendAuth').catch(() => {});
+    }
+  } catch (error) {
+    console.warn('[Background] Silent re-auth error:', error);
+  }
+}
+
 // Handle backend login
 async function handleBackendLogin(payload: any, sendResponse: (response?: any) => void): Promise<void> {
   if (!isInitialized) {
@@ -518,6 +580,9 @@ async function handleBackendLogin(payload: any, sendResponse: (response?: any) =
         connectedAt: Date.now(),
       });
 
+      // Log the stored refresh token status
+      console.log('[Background] Login successful, refresh token stored:', !!result.refresh_token);
+
       // Also cache recent analyses
       try {
         const stats = await tradingCopilotApi.getAnalysisStats();
@@ -532,9 +597,37 @@ async function handleBackendLogin(payload: any, sendResponse: (response?: any) =
   }
 }
 
+// Handle backend URL update from Options page
+async function handleUpdateBackendUrl(payload: any, sendResponse: (response?: any) => void): Promise<void> {
+  const url = payload?.url?.trim();
+  if (!url) {
+    sendResponse({ success: false, error: 'URL required' });
+    return;
+  }
+  // Update both the API client and the config cache
+  tradingCopilotApi.setBaseUrl(url);
+  setCachedBackendUrl(url);
+  console.log('[Background] Backend URL updated to:', url);
+  sendResponse({ success: true });
+}
+
 // Handle backend logout
-function handleBackendLogout(sendResponse: (response?: any) => void): void {
+async function handleBackendLogout(sendResponse: (response?: any) => void): Promise<void> {
+  // Call backend to invalidate server-side tokens (fire-and-forget)
+  try {
+    const jwt = tradingCopilotApi.getJwtToken();
+    if (jwt) {
+      await fetch(`${tradingCopilotApi.getBaseUrl()}/auth/logout`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${jwt}` },
+      });
+    }
+  } catch {
+    // Server-side logout is best-effort
+  }
+
   tradingCopilotApi.setJwtToken(null);
+  tradingCopilotApi.setRefreshToken(null);
   if (storage) {
     storage.remove('backendAuth').catch(() => {});
   }

@@ -1,288 +1,301 @@
-// Technical Analysis Engine
+/**
+ * Technical Analysis Engine
+ *
+ * The single source of truth for all market analysis.
+ * Integrates SignalScoringEngine + TradeSetupEngine + ReasoningEngine + PatternRecognitionEngine.
+ *
+ * Rules:
+ * - Every indicator value comes from real OHLCV data — never simulated
+ * - Every numeric value is validated before use (isFinite check)
+ * - Fully deterministic: same candles → same result every time
+ * - No Math.random(), no placeholder confidence, no hardcoded recommendations
+ * - If data is insufficient, returns NEUTRAL/HOLD with a clear reason
+ *
+ * Performance target: full analysis in < 200ms for 500+ candles
+ */
+
 import { TechnicalIndicators } from '../../utils/technical-indicators';
 import { adapterManager } from '../../adapters';
+import { SignalScoringEngine, IndicatorSnapshot } from './signal-scoring-engine';
+import { TradeSetupEngine, TradeSetupInput } from './trade-setup-engine';
+import { ReasoningEngine } from './reasoning-engine';
+import { PatternRecognitionEngine, PatternResult } from './pattern-recognition-engine';
+
+// ── Public output types ──
+
+export interface AnalysisOutput {
+  recommendation: 'STRONG_BUY' | 'BUY' | 'HOLD' | 'SELL' | 'STRONG_SELL';
+  confidence: number;           // 0-100
+  entryPrice: number;
+  stopLoss: number;
+  takeProfit1: number;
+  takeProfit2: number;
+  riskReward: number;
+  riskPercent: number;
+  trend: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  volatility: 'HIGH' | 'LOW' | 'NORMAL';
+  reasoning: string[];
+  keyFactors: string[];
+  risks: string[];
+  patterns: PatternResult;
+  indicatorSummary: {
+    sma20: number;
+    sma50: number;
+    ema12: number;
+    ema26: number;
+    rsi: number;
+    macd: number;
+    macdSignal: number;
+    macdHistogram: number;
+    bollingerUpper: number;
+    bollingerMiddle: number;
+    bollingerLower: number;
+    atr: number;
+    adx: number;
+    plusDI: number;
+    minusDI: number;
+    vwap: number;
+    stochK: number;
+    stochD: number;
+    obv: number;
+    volume: number;
+    avgVolume: number;
+  };
+  candleCount: number;
+  symbol: string;
+  timeframe: string;
+  dataSource: string;
+}
 
 export class TechnicalAnalysisEngine {
-  async analyze(symbol: string, timeframe: string, platform: string = ''): Promise<any> {
-    // Get real data from the platform adapter
-    // Pass the platform so the adapter manager can select the right adapter
-    // (platform comes from the content script which detected it from the page)
-    const adapter = await adapterManager.getCurrentAdapter(platform || undefined);
+  private signalScoring: SignalScoringEngine;
+  private tradeSetup: TradeSetupEngine;
+  private reasoning: ReasoningEngine;
+  private patternRecognition: PatternRecognitionEngine;
 
-    // We MUST have an adapter with real data
-    if (!adapter) {
-      console.error('[Analysis Engine] No adapter available - cannot analyze without market data');
-      throw new Error('No adapter available. Please navigate to a supported trading platform (e.g., TradingView) to analyze live market data.');
-    }
+  constructor() {
+    this.signalScoring = new SignalScoringEngine();
+    this.tradeSetup = new TradeSetupEngine();
+    this.reasoning = new ReasoningEngine();
+    this.patternRecognition = new PatternRecognitionEngine();
+  }
 
-    // Get chart data from the adapter — pass symbol and timeframe directly
-    // The adapter receives these from the content script via the analysis pipeline
-    let chartData;
-    try {
-      chartData = await adapter.getChartData(symbol, timeframe);
-    } catch (error) {
-      console.error('[Analysis Engine] Failed to get chart data from adapter:', error);
-      // Only fall back to simulated data if this is a dev/test context
-      // In production, we throw to surface the error
-      if (symbol === '__TEST__' || timeframe === '__TEST__') {
-        console.warn('[Analysis Engine] Test mode detected, using simulated data');
-        return this.analyzeWithSimulatedData(symbol, timeframe);
-      }
-      throw new Error('Failed to fetch live market data: ' + (error instanceof Error ? error.message : String(error)));
-    }
+  /**
+   * Analyze a market using real OHLCV data.
+   */
+  async analyze(symbol: string, timeframe: string, platform: string = ''): Promise<AnalysisOutput> {
+    // ── 1. Acquire real market data ──
+    const { chartData, dataSource } = await this.fetchMarketData(symbol, timeframe, platform);
 
-    // Extract OHLCV data from chart data
-    const { timestamps, open, high, low, close, volume } = chartData;
-    // Void to indicate intentional omission if not used immediately
-    (void timestamps, void open);
+    const { close, high, low, volume, open, timestamps } = chartData;
+    const candleCount = close.length;
+    const currentPrice = close[candleCount - 1];
 
-    // Validate we have sufficient data
-    if (!close || close.length === 0) {
-      console.error('[Analysis Engine] No price data available from adapter');
-      throw new Error('No price data available from market data feed. The symbol may not be supported.');
-    }
+    console.log('[Analysis Engine] Analyzing:', { symbol, timeframe, candleCount, dataSource, currentPrice });
 
-    console.log('[Analysis Engine] Analysis using live data:', {
-      symbol,
-      timeframe,
-      dataSource: chartData.source || 'live',
-      candleCount: close.length,
-      latestClose: close[close.length - 1],
-      latestVolume: volume ? volume[volume.length - 1] : 'N/A'
+    // ── 2. Calculate ALL technical indicators ──
+    const indicators = this.calculateAllIndicators(close, high, low, volume);
+
+    // ── 3. Build indicator snapshot for scoring ──
+    const snapshot = this.buildSnapshot(indicators, currentPrice);
+
+    // ── 4. Score signals ──
+    const signalScore = this.signalScoring.score(snapshot);
+
+    // ── 5. Calculate trade setup (entry/SL/TP) ──
+    const tradeSetup = this.tradeSetup.calculate({
+      close: currentPrice,
+      high: high[candleCount - 1],
+      low: low[candleCount - 1],
+      atr: indicators.atr,
+      direction: signalScore.recommendation,
+      bollingerUpper: indicators.bollingerUpper,
+      bollingerLower: indicators.bollingerLower,
+      sma20: indicators.sma20,
+      sma50: indicators.sma50,
+      sma200: isFinite(indicators.sma200) ? indicators.sma200 : 0,
+      highest50: indicators.highest50,
+      lowest50: indicators.lowest50,
     });
 
-    // Calculate all technical indicators using real data
-    const sma20 = TechnicalIndicators.sma(close, 20);
-    const sma50 = TechnicalIndicators.sma(close, 50);
-    const ema12 = TechnicalIndicators.ema(close, 12);
-    const ema26 = TechnicalIndicators.ema(close, 26);
+    // ── 6. Run pattern recognition on the same OHLCV data ──
+    const patternsResult = await this.patternRecognition.analyze(symbol, timeframe, {
+      open, high, low, close, volume,
+    });
 
-    const rsi = TechnicalIndicators.rsi(close, 14);
+    // ── 7. Generate reasoning ──
+    const reasoningResult = this.reasoning.generate(snapshot, signalScore.recommendation, signalScore.confidence);
 
-    const macd = TechnicalIndicators.macd(close, 12, 26, 9);
-
-    const bollinger = TechnicalIndicators.bollingerBands(close, 20, 2);
-
-    const adxData = TechnicalIndicators.adx(high, low, close, 14);
-    const atr = TechnicalIndicators.atr(high, low, close, 14);
-
-    // Typical price for VWAP calculation: (high + low + close) / 3
-    const typicalPrice = high.map((h: number, i: number) => (h + low[i] + close[i]) / 3);
-    const vwap = TechnicalIndicators.vwap(typicalPrice, volume);
-
-    // Determine signal based on multiple indicators
-    const latestClose = close.length > 0 ? close[close.length - 1] : 0;
-    const latestSMA20 = sma20.length > 0 ? sma20[sma20.length - 1] : 0;
-    const latestSMA50 = sma50.length > 0 ? sma50[sma50.length - 1] : 0;
-    const latestRSI = rsi.length > 0 ? rsi[rsi.length - 1] : 0;
-    const latestMACD = macd.macd.length > 0 ? macd.macd[macd.macd.length - 1] : 0;
-    const latestMACDSignal = macd.signal.length > 0 ? macd.signal[macd.signal.length - 1] : 0;
-    const latestADX = adxData.adx.length > 0 ? adxData.adx[adxData.adx.length - 1] : 0;
-    const latestPlusDI = adxData.plusDI.length > 0 ? adxData.plusDI[adxData.plusDI.length - 1] : 0;
-    const latestMinusDI = adxData.minusDI.length > 0 ? adxData.minusDI[adxData.minusDI.length - 1] : 0;
-    const latestATR = atr.length > 0 ? atr[atr.length - 1] : 0;
-    const latestVWAP = vwap.length > 0 ? vwap[vwap.length - 1] : 0;
-
-    // Determine signal direction and strength
-    let signal: 'BUY' | 'SELL' | 'NEUTRAL' = 'NEUTRAL';
-    let strength = 0.5;
-
-    // Trend based signals
-    if (latestClose > latestSMA20 && latestSMA20 > latestSMA50) {
-      // Uptrend
-      signal = 'BUY';
-      strength = 0.6;
-    } else if (latestClose < latestSMA20 && latestSMA20 < latestSMA50) {
-      // Downtrend
-      signal = 'SELL';
-      strength = 0.6;
-    }
-
-    // RSI signals
-    if (!isNaN(latestRSI)) {
-      if (latestRSI < 30 && signal !== 'SELL') {
-        // Oversold - bullish
-        signal = 'BUY';
-        strength = Math.max(strength, 0.6);
-      } else if (latestRSI > 70 && signal !== 'BUY') {
-        // Overbought - bearish
-        signal = 'SELL';
-        strength = Math.max(strength, 0.6);
-      }
-    }
-
-    // MACD signals
-    if (!isNaN(latestMACD) && !isNaN(latestMACDSignal)) {
-      if (latestMACD > latestMACDSignal && signal !== 'SELL') {
-        // MACD bullish crossover
-        signal = 'BUY';
-        strength = Math.max(strength, 0.65);
-      } else if (latestMACD < latestMACDSignal && signal !== 'BUY') {
-        // MACD bearish crossover
-        signal = 'SELL';
-        strength = Math.max(strength, 0.65);
-      }
-    }
-
-    // ADX for trend strength (values above 25 indicate strong trend)
-    if (!isNaN(latestADX)) {
-      if (latestADX > 25) {
-        // Strong trend - increase confidence in current direction
-        strength = Math.min(0.9, strength + 0.1);
-      } else if (latestADX < 20) {
-        // Weak trend - reduce confidence
-        strength = Math.max(0.3, strength - 0.1);
-      }
-    }
-
-    // Additional confirmation from price vs VWAP
-    if (!isNaN(latestVWAP)) {
-      if (latestClose > latestVWAP && signal === 'BUY') {
-        // Price above VWAP adds confidence to buy signal
-        strength = Math.min(0.95, strength + 0.05);
-      } else if (latestClose < latestVWAP && signal === 'SELL') {
-        // Price below VWAP adds confidence to sell signal
-        strength = Math.min(0.95, strength + 0.05);
-      }
-    }
+    // ── 8. Determine trend and volatility labels ──
+    const trend = this.determineTrend(snapshot, signalScore.recommendation);
+    const volatility = this.determineVolatility(indicators.atr, currentPrice, indicators.bollingerWidth);
 
     return {
-      signal,
-      strength: Math.min(1.0, Math.max(0, strength)),
-      indicators: {
-        sma20: sma20.length > 0 ? sma20[sma20.length - 1] : 0,
-        sma50: sma50.length > 0 ? sma50[sma50.length - 1] : 0,
-        ema12: ema12.length > 0 ? ema12[ema12.length - 1] : 0,
-        ema26: ema26.length > 0 ? ema26[ema26.length - 1] : 0,
-        rsi: rsi.length > 0 ? rsi[rsi.length - 1] : 0,
-        macd: macd.macd.length > 0 ? macd.macd[macd.macd.length - 1] : 0,
-        macdSignal: macd.signal.length > 0 ? macd.signal[macd.signal.length - 1] : 0,
-        macdHistogram: macd.histogram.length > 0 ? macd.histogram[macd.histogram.length - 1] : 0,
-        bollingerUpper: bollinger.upper.length > 0 ? bollinger.upper[bollinger.upper.length - 1] : 0,
-        bollingerMiddle: bollinger.middle.length > 0 ? bollinger.middle[bollinger.middle.length - 1] : 0,
-        bollingerLower: bollinger.lower.length > 0 ? bollinger.lower[bollinger.lower.length - 1] : 0,
-        adx: adxData.adx.length > 0 ? adxData.adx[adxData.adx.length - 1] : 0,
-        plusDI: adxData.plusDI.length > 0 ? adxData.plusDI[adxData.plusDI.length - 1] : 0,
-        minusDI: adxData.minusDI.length > 0 ? adxData.minusDI[adxData.minusDI.length - 1] : 0,
-        atr: atr.length > 0 ? atr[atr.length - 1] : 0,
-        vwap: vwap.length > 0 ? vwap[vwap.length - 1] : 0
-      }
+      recommendation: signalScore.recommendation,
+      confidence: signalScore.confidence,
+      entryPrice: tradeSetup.entry,
+      stopLoss: tradeSetup.stopLoss,
+      takeProfit1: tradeSetup.takeProfit1,
+      takeProfit2: tradeSetup.takeProfit2,
+      riskReward: tradeSetup.riskReward,
+      riskPercent: tradeSetup.riskPercent,
+      trend,
+      volatility,
+      reasoning: reasoningResult.reasons,
+      keyFactors: reasoningResult.keyFactors,
+      risks: reasoningResult.risks,
+      patterns: patternsResult,
+      indicatorSummary: {
+        sma20: safeVal(indicators.sma20),
+        sma50: safeVal(indicators.sma50),
+        ema12: safeVal(indicators.ema12),
+        ema26: safeVal(indicators.ema26),
+        rsi: safeVal(indicators.rsi),
+        macd: safeVal(indicators.macdLine),
+        macdSignal: safeVal(indicators.macdSignal),
+        macdHistogram: safeVal(indicators.macdHistogram),
+        bollingerUpper: safeVal(indicators.bollingerUpper),
+        bollingerMiddle: safeVal(indicators.bollingerMiddle),
+        bollingerLower: safeVal(indicators.bollingerLower),
+        atr: safeVal(indicators.atr),
+        adx: safeVal(indicators.adx),
+        plusDI: safeVal(indicators.plusDI),
+        minusDI: safeVal(indicators.minusDI),
+        vwap: safeVal(indicators.vwap),
+        stochK: safeVal(indicators.stochK),
+        stochD: safeVal(indicators.stochD),
+        obv: safeVal(indicators.obv),
+        volume: safeVal(indicators.latestVolume),
+        avgVolume: safeVal(indicators.avgVolume),
+      },
+      candleCount,
+      symbol,
+      timeframe,
+      dataSource,
     };
   }
 
-  // Fallback method for simulated data - only used in test/development mode
-  private analyzeWithSimulatedData(symbol: string, timeframe: string): any {
-    // Simulate delay for data processing
-    return new Promise(resolve => setTimeout(resolve, 10)).then(() => {
-      // Simulate delay for data processing
+  // ── Private helpers ──
 
-      // Placeholder data - in reality this comes from the chart adapter
-      const closes = Array(50).fill(0).map((_, i) => 100 + Math.sin(i * 0.1) * 10 + Math.random() * 2);
-      const highs = closes.map(c => c + Math.random() * 2);
-      const lows = closes.map(c => c - Math.random() * 2);
-      const volumes = Array(50).fill(0).map(() => 1000 + Math.random() * 1000);
+  private async fetchMarketData(symbol: string, timeframe: string, platform: string): Promise<{ chartData: any; dataSource: string }> {
+    const adapter = await adapterManager.getCurrentAdapter(platform || undefined);
 
-      // Calculate all technical indicators
-      const sma20 = TechnicalIndicators.sma(closes, 20);
-      const sma50 = TechnicalIndicators.sma(closes, 50);
-      const ema12 = TechnicalIndicators.ema(closes, 12);
-      const ema26 = TechnicalIndicators.ema(closes, 26);
+    if (!adapter) {
+      throw new Error('No market data adapter available. Open a supported trading platform (TradingView, Binance, etc.) to analyze live data.');
+    }
 
-      const rsi = TechnicalIndicators.rsi(closes, 14);
+    const chartData = await adapter.getChartData(symbol, timeframe);
 
-      const macd = TechnicalIndicators.macd(closes, 12, 26, 9);
+    if (!chartData || !chartData.close || chartData.close.length === 0) {
+      throw new Error(`No price data received from adapter for ${symbol}. The symbol may not be supported.`);
+    }
 
-      const bollinger = TechnicalIndicators.bollingerBands(closes, 20, 2);
-      const adxData = TechnicalIndicators.adx(highs, lows, closes, 14);
-      const atr = TechnicalIndicators.atr(highs, lows, closes, 14);
-
-      // Typical price for VWAP calculation: (high + low + close) / 3
-      const typicalPrice = highs.map((h: number, i: number) => (h + lows[i] + closes[i]) / 3);
-      const vwap = TechnicalIndicators.vwap(typicalPrice, volumes);
-
-      // Determine signal based on multiple indicators
-      const latestClose = closes.length > 0 ? closes[closes.length - 1] : 0;
-      const latestSMA20 = sma20.length > 0 ? sma20[sma20.length - 1] : 0;
-      const latestSMA50 = sma50.length > 0 ? sma50[sma50.length - 1] : 0;
-      const latestRSI = rsi.length > 0 ? rsi[rsi.length - 1] : 0;
-      const latestMACD = macd.macd.length > 0 ? macd.macd[macd.macd.length - 1] : 0;
-      const latestMACDSignal = macd.signal.length > 0 ? macd.signal[macd.signal.length - 1] : 0;
-      const latestADX = adxData.adx.length > 0 ? adxData.adx[adxData.adx.length - 1] : 0;
-
-      // Determine signal direction and strength
-      let signal: 'BUY' | 'SELL' | 'NEUTRAL' = 'NEUTRAL';
-      let strength = 0.5;
-
-      // Trend based signals
-      if (latestClose > latestSMA20 && latestSMA20 > latestSMA50) {
-        // Uptrend
-        signal = 'BUY';
-        strength = 0.6;
-      } else if (latestClose < latestSMA20 && latestSMA20 < latestSMA50) {
-        // Downtrend
-        signal = 'SELL';
-        strength = 0.6;
-      }
-
-      // RSI signals
-      if (!isNaN(latestRSI)) {
-        if (latestRSI < 30 && signal !== 'SELL') {
-          // Oversold - bullish
-          signal = 'BUY';
-          strength = Math.max(strength, 0.6);
-        } else if (latestRSI > 70 && signal !== 'BUY') {
-          // Overbought - bearish
-          signal = 'SELL';
-          strength = Math.max(strength, 0.6);
-        }
-      }
-
-      // MACD signals
-      if (!isNaN(latestMACD) && !isNaN(latestMACDSignal)) {
-        if (latestMACD > latestMACDSignal && signal !== 'SELL') {
-          // MACD bullish crossover
-          signal = 'BUY';
-          strength = Math.max(strength, 0.65);
-        } else if (latestMACD < latestMACDSignal && signal !== 'BUY') {
-          // MACD bearish crossover
-          signal = 'SELL';
-          strength = Math.max(strength, 0.65);
-        }
-      }
-
-      // ADX for trend strength (values above 25 indicate strong trend)
-      if (!isNaN(latestADX)) {
-        if (latestADX > 25) {
-          // Strong trend - increase confidence in current direction
-          strength = Math.min(0.9, strength + 0.1);
-        } else if (latestADX < 20) {
-          // Weak trend - reduce confidence
-          strength = Math.max(0.3, strength - 0.1);
-        }
-      }
-
-      return {
-        signal,
-        strength: Math.min(1.0, Math.max(0, strength)),
-        indicators: {
-          sma20: sma20[sma20.length - 1],
-          sma50: sma50[sma50.length - 1],
-          ema12: ema12[ema12.length - 1],
-          ema26: ema26[ema26.length - 1],
-          rsi: rsi[rsi.length - 1],
-          macd: macd.macd[macd.macd.length - 1],
-          macdSignal: macd.signal[macd.signal.length - 1],
-          macdHistogram: macd.histogram[macd.histogram.length - 1],
-          bollingerUpper: bollinger.upper[bollinger.upper.length - 1],
-          bollingerMiddle: bollinger.middle[bollinger.middle.length - 1],
-          bollingerLower: bollinger.lower[bollinger.lower.length - 1],
-          adx: adxData.adx[adxData.adx.length - 1],
-          plusDI: adxData.plusDI[adxData.plusDI.length - 1],
-          minusDI: adxData.minusDI[adxData.minusDI.length - 1],
-          atr: atr[atr.length - 1],
-          vwap: vwap[vwap.length - 1]
-        }
-      };
-    });
+    return {
+      chartData,
+      dataSource: chartData.source || 'live',
+    };
   }
+
+  private calculateAllIndicators(close: number[], high: number[], low: number[], volume: number[]) {
+    const sma20 = last(TechnicalIndicators.sma(close, 20));
+    const sma50 = last(TechnicalIndicators.sma(close, 50));
+    const sma200 = last(TechnicalIndicators.sma(close, 200));
+    const ema12 = last(TechnicalIndicators.ema(close, 12));
+    const ema26 = last(TechnicalIndicators.ema(close, 26));
+    const rsi = last(TechnicalIndicators.rsi(close, 14));
+
+    const macdResult = TechnicalIndicators.macd(close, 12, 26, 9);
+    const macdLine = last(macdResult.macd);
+    const macdSignal = last(macdResult.signal);
+    const macdHistogram = last(macdResult.histogram);
+
+    const bbResult = TechnicalIndicators.bollingerBands(close, 20, 2);
+    const bollingerUpper = last(bbResult.upper);
+    const bollingerMiddle = last(bbResult.middle);
+    const bollingerLower = last(bbResult.lower);
+    const bbMid = bollingerMiddle;
+    const bollingerWidth = isFinite(bbMid) && bbMid > 0
+      ? (bollingerUpper - bollingerLower) / bbMid
+      : NaN;
+
+    const atrArr = TechnicalIndicators.atr(high, low, close, 14);
+    const atr = last(atrArr);
+
+    const adxResult = TechnicalIndicators.adx(high, low, close, 14);
+    const adx = last(adxResult.adx);
+    const plusDI = last(adxResult.plusDI);
+    const minusDI = last(adxResult.minusDI);
+
+    const typicalPrice = high.map((h: number, i: number) => (h + low[i] + close[i]) / 3);
+    const vwapArr = TechnicalIndicators.vwap(typicalPrice, volume);
+    const vwap = last(vwapArr);
+
+    const stochResult = TechnicalIndicators.stoch(high, low, close, 14, 3);
+    const stochK = last(stochResult.k);
+    const stochD = last(stochResult.d);
+
+    const obvArr = TechnicalIndicators.obv(close, volume);
+    const obv = last(obvArr);
+
+    const latestVolume = last(volume);
+    const avgVolume = close.length >= 20
+      ? volume.slice(-20).reduce((a, b) => a + b, 0) / 20
+      : NaN;
+
+    const lookback = Math.min(50, close.length);
+    const highest50 = Math.max(...high.slice(-lookback));
+    const lowest50 = Math.min(...low.slice(-lookback));
+
+    return {
+      sma20, sma50, sma200, ema12, ema26,
+      rsi, macdLine, macdSignal, macdHistogram,
+      bollingerUpper, bollingerMiddle, bollingerLower, bollingerWidth,
+      atr, adx, plusDI, minusDI, vwap,
+      stochK, stochD, obv, latestVolume, avgVolume,
+      highest50, lowest50,
+    };
+  }
+
+  private buildSnapshot(ind: ReturnType<typeof this.calculateAllIndicators>, currentPrice: number): IndicatorSnapshot {
+    return {
+      close: currentPrice,
+      sma20: ind.sma20, sma50: ind.sma50,
+      ema12: ind.ema12, ema26: ind.ema26,
+      rsi: ind.rsi,
+      macd: ind.macdLine, macdSignal: ind.macdSignal, macdHistogram: ind.macdHistogram,
+      bollingerUpper: ind.bollingerUpper, bollingerLower: ind.bollingerLower, bollingerWidth: ind.bollingerWidth,
+      atr: ind.atr, adx: ind.adx, plusDI: ind.plusDI, minusDI: ind.minusDI,
+      vwap: ind.vwap,
+      stochK: ind.stochK, stochD: ind.stochD,
+      obv: ind.obv,
+      volume: ind.latestVolume, avgVolume: ind.avgVolume,
+      highestHigh: ind.highest50, lowestLow: ind.lowest50,
+    };
+  }
+
+  private determineTrend(snapshot: IndicatorSnapshot, recommendation: string): 'BULLISH' | 'BEARISH' | 'NEUTRAL' {
+    if (recommendation === 'STRONG_BUY' || recommendation === 'BUY') return 'BULLISH';
+    if (recommendation === 'STRONG_SELL' || recommendation === 'SELL') return 'BEARISH';
+    if (isFinite(snapshot.ema12) && isFinite(snapshot.ema26)) {
+      if (snapshot.ema12 > snapshot.ema26) return 'BULLISH';
+      if (snapshot.ema12 < snapshot.ema26) return 'BEARISH';
+    }
+    return 'NEUTRAL';
+  }
+
+  private determineVolatility(atr: number, price: number, bollingerWidth: number): 'HIGH' | 'LOW' | 'NORMAL' {
+    if (!isFinite(atr) || !isFinite(price) || price <= 0) return 'NORMAL';
+    const atrPct = atr / price;
+    if (atrPct > 0.04) return 'HIGH';
+    if (atrPct < 0.01 && isFinite(bollingerWidth) && bollingerWidth < 0.1) return 'LOW';
+    return 'NORMAL';
+  }
+}
+
+function last(arr: number[]): number {
+  return arr.length > 0 ? arr[arr.length - 1] : NaN;
+}
+
+function safeVal(v: number): number {
+  return isFinite(v) ? Math.round(v * 100) / 100 : 0;
 }

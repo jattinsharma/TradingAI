@@ -1,7 +1,13 @@
 /**
  * Backend API client for the AI Trading Copilot extension.
  * Handles JWT authentication, auto-saving analyses, fetching history/stats.
+ *
+ * The backend URL is centrally configured in config.ts.
+ * Default: https://tradingai-4dq2.onrender.com (production)
+ * Local dev: http://localhost:3000 (set via Options page → Connection tab)
  */
+import { PRODUCTION_BACKEND_URL } from './config';
+
 export interface BackendConfig {
   baseUrl: string;
   apiKey?: string;
@@ -50,9 +56,37 @@ export interface TradeJournalPayload {
 export class TradingCopilotApi {
   private baseUrl: string;
   private jwtToken: string | null = null;
+  private refreshToken: string | null = null;
+  private onRefreshFailed: (() => void) | null = null;
 
-  constructor(config: BackendConfig) {
-    this.baseUrl = config.baseUrl.replace(/\/+$/, '');
+  constructor(config?: BackendConfig) {
+    this.baseUrl = config?.baseUrl
+      ? config.baseUrl.replace(/\/+$/, '')
+      : PRODUCTION_BACKEND_URL;
+  }
+
+  /**
+   * Update the backend URL at runtime.
+   * Called when the user configures a custom URL via the Options page,
+   * or when the background service worker loads stored settings.
+   */
+  setBaseUrl(url: string): void {
+    this.baseUrl = url.trim().replace(/\/+$/, '');
+  }
+
+  /**
+   * Get the current backend URL (used by background logout).
+   */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
+   * Register a callback for when token refresh fails.
+   * The background service worker uses this to clear stored tokens and force re-login.
+   */
+  setOnRefreshFailed(callback: () => void): void {
+    this.onRefreshFailed = callback;
   }
 
   setJwtToken(token: string | null): void {
@@ -63,8 +97,58 @@ export class TradingCopilotApi {
     return this.jwtToken;
   }
 
+  setRefreshToken(token: string | null): void {
+    this.refreshToken = token;
+  }
+
+  getRefreshToken(): string | null {
+    return this.refreshToken;
+  }
+
   isAuthenticated(): boolean {
     return this.jwtToken !== null;
+  }
+
+  /**
+   * Attempt to refresh the access token using the stored refresh token.
+   * Returns true if the refresh succeeded.
+   */
+  async tryRefreshToken(): Promise<boolean> {
+    if (!this.refreshToken) return false;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const response = await fetch(
+        `${this.baseUrl}/auth/refresh`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: this.refreshToken }),
+          signal: controller.signal,
+        },
+      );
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        this.jwtToken = null;
+        this.refreshToken = null;
+        if (this.onRefreshFailed) this.onRefreshFailed();
+        return false;
+      }
+
+      const data = await response.json();
+      this.jwtToken = data.access_token;
+      if (data.refresh_token) {
+        this.refreshToken = data.refresh_token;
+      }
+      return true;
+    } catch {
+      this.jwtToken = null;
+      this.refreshToken = null;
+      if (this.onRefreshFailed) this.onRefreshFailed();
+      return false;
+    }
   }
 
   private async request<T>(
@@ -96,6 +180,18 @@ export class TradingCopilotApi {
 
         clearTimeout(timeoutId);
 
+        // Auto-refresh on 401: try to refresh the token and retry the request
+        if (response.status === 401 && this.refreshToken && attempt < retries) {
+          const refreshed = await this.tryRefreshToken();
+          if (refreshed) {
+            // Update the authorization header with the new token
+            headers['Authorization'] = `Bearer ${this.jwtToken}`;
+            continue; // Retry the original request with the new token
+          }
+          // Refresh failed — don't retry auth-required requests
+          throw new Error('API 401: Unauthorized. Token refresh failed. Please log in again.');
+        }
+
         if (!response.ok) {
           const errorText = await response.text().catch(() => 'Unknown error');
           throw new Error(`API ${response.status}: ${errorText}`);
@@ -104,6 +200,10 @@ export class TradingCopilotApi {
         return (await response.json()) as T;
       } catch (error) {
         if (attempt < retries) {
+          // Don't retry if the error was a 401 with failed refresh
+          if (error instanceof Error && error.message.includes('Token refresh failed')) {
+            throw error;
+          }
           // Exponential backoff
           await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 500));
           continue;
@@ -140,26 +240,18 @@ export class TradingCopilotApi {
       { email, password },
     );
     this.jwtToken = result.access_token;
+    this.refreshToken = result.refresh_token;
     return result;
   }
 
-  async register(email: string, password: string): Promise<{ access_token: string; refresh_token: string; user: any }> {
+  async register(email: string, password: string, name: string): Promise<{ access_token: string; refresh_token: string; user: any }> {
     const result = await this.request<{ access_token: string; refresh_token: string; user: any }>(
       'POST',
       '/auth/register',
-      { email, password },
+      { email, password, name },
     );
     this.jwtToken = result.access_token;
-    return result;
-  }
-
-  async refreshToken(refreshToken: string): Promise<{ access_token: string; refresh_token: string }> {
-    const result = await this.request<{ access_token: string; refresh_token: string }>(
-      'POST',
-      '/auth/refresh',
-      { refreshToken },
-    );
-    this.jwtToken = result.access_token;
+    this.refreshToken = result.refresh_token;
     return result;
   }
 
@@ -230,6 +322,7 @@ export class TradingCopilotApi {
 }
 
 // Singleton that gets configured at runtime
-export const tradingCopilotApi = new TradingCopilotApi({
-  baseUrl: 'http://localhost:3000',
-});
+// Default: PRODUCTION_BACKEND_URL (https://tradingai-4dq2.onrender.com)
+// The background service worker calls initFromStorage() on startup.
+// Users can switch to LOCAL_BACKEND_URL (http://localhost:3000) via Options page.
+export const tradingCopilotApi = new TradingCopilotApi();
