@@ -95,11 +95,43 @@ export interface AnalysisResult {
   currentPrice?: number;
   riskLevel?: string;
   entryPrice?: number;
-  stopLoss?: number;
+  stopLoss?: number | { price: number; label?: string };
   takeProfit?: number;
   riskRewardRatio?: number;
   // Legacy engines object — populated by AnalysisOrchestrator for backward compatibility
   engines: AnalysisEngines;
+  // V2 TradeRecommendation fields
+  signal?: string;
+  signalStrength?: string;
+  entry?: { price: number; label?: string };
+  takeProfit1?: { price: number; label?: string };
+  takeProfit2?: { price: number; label?: string };
+  riskReward?: number;
+  holdingPeriod?: string;
+  reasons?: string[];
+  contradictingEvidence?: string[];
+  alternativeScenario?: string;
+  probability?: number;
+  tradeQualityScore?: number;
+  agentReasoningChain?: Array<{
+    agent: string;
+    signal: string;
+    confidence: number;
+    keyPoints: string[];
+    latencyMs: number;
+  }>;
+  debate?: {
+    rounds: unknown[];
+    verdict: {
+      signal: string;
+      strength: string;
+      confidence: number;
+      consensus: boolean;
+      consensusSummary: string;
+    };
+    bullScore: number;
+    bearScore: number;
+  };
 }
 
 export interface PlatformCapabilities {

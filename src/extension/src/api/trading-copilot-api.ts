@@ -97,6 +97,25 @@ export interface StatsResponse {
   winRate: number;
 }
 
+export interface V2AnalysisPayload {
+  symbol: string;
+  timeframe: string;
+  depth?: 'QUICK' | 'STANDARD' | 'DEEP';
+  chartData: {
+    currentPrice: number;
+    exchange?: string;
+    indicators: Record<string, unknown>;
+    candles?: Array<{
+      timestamp: string;
+      open: number;
+      high: number;
+      low: number;
+      close: number;
+      volume: number;
+    }>;
+  };
+}
+
 export class TradingCopilotApi {
   private baseUrl: string;
   private jwtToken: string | null = null;
@@ -273,6 +292,13 @@ export class TradingCopilotApi {
     }
 
     throw new Error('Request failed after retries');
+  }
+
+  // ─── Multi-Agent V2 AI Engine ──────────────────────────
+
+  async analyzeV2(payload: V2AnalysisPayload): Promise<any> {
+    const endpoint = payload.depth === 'QUICK' ? '/v2/analyze/quick' : payload.depth === 'DEEP' ? '/v2/analyze/deep' : '/v2/analyze';
+    return this.request<any>('POST', endpoint, payload);
   }
 
   // ─── Auth ──────────────────────────────────────────────

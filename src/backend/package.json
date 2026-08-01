@@ -18,6 +18,23 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
+    "coverageDirectory": "../coverage",
+    "testEnvironment": "node"
+  },
   "keywords": [
     "trading",
     "crypto",
@@ -63,6 +80,7 @@
     "socket.io": "^4.8.3",
     "swagger-ui-express": "^5.0.1",
     "typescript": "^5.0.0",
+    "uuid": "^14.0.1",
     "ws": "^8.21.1"
   },
   "devDependencies": {
@@ -74,6 +92,7 @@
     "@types/node": "^20.0.0",
     "@types/passport": "^1.0.17",
     "@types/supertest": "^2.0.0",
+    "@types/uuid": "^10.0.0",
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",

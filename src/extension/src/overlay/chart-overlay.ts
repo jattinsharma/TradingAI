@@ -338,12 +338,19 @@ export class ChartOverlay {
     const risksSection = this.overlayContainer.querySelector('#ov-risks-section') as HTMLElement;
     const risksList = this.overlayContainer.querySelector('#ov-risks-list') as HTMLElement;
 
-    const rec = (result.recommendation || 'HOLD').toUpperCase();
+    // Extract recommendation fields (support both V2 TradeRecommendation and V1 AnalysisResult)
+    const rec = (result.signal || result.recommendation || 'NEUTRAL').toUpperCase();
     const conf = result.confidence ?? 50;
     const currentPrice = result.currentPrice ?? (result.engines?.technical?.indicators?.atr ?? 0);
-    const tradePlan = result.engines?.tradePlanning?.tradeSetup;
+
+    // V2 entry/SL/TP vs V1 tradePlan
+    const entryVal = result.entry?.price ?? result.entryPrice ?? result.engines?.tradePlanning?.tradeSetup?.entryPrice;
+    const slVal = typeof result.stopLoss === 'object' && result.stopLoss !== null ? result.stopLoss.price : (typeof result.stopLoss === 'number' ? result.stopLoss : result.engines?.tradePlanning?.tradeSetup?.stopLoss);
+    const tpVal = result.takeProfit1?.price ?? result.takeProfit ?? result.engines?.tradePlanning?.tradeSetup?.takeProfit;
+    const rrVal = result.riskReward ?? result.riskRewardRatio ?? result.engines?.tradePlanning?.tradeSetup?.riskRewardRatio;
+
     const aiExplanation = result.engines?.aiExplanation;
-    const userReasoning = result.reasoning || '';
+    const userReasoning = Array.isArray(result.reasons) ? result.reasons.join('\n• ') : (result.reasoning || '');
 
     // Symbol & Timeframe
     if (symbol) symbol.textContent = result.symbol || '---';
@@ -353,52 +360,55 @@ export class ChartOverlay {
     if (price) price.textContent = currentPrice ? this.formatPrice(currentPrice) : '---';
 
     // Recommendation box
-    const isBuy = rec === 'BUY' || rec === 'STRONG_BUY';
-    const isSell = rec === 'SELL' || rec === 'STRONG_SELL';
+    const isBull = rec === 'BULLISH' || rec === 'BUY' || rec === 'STRONG_BUY';
+    const isBear = rec === 'BEARISH' || rec === 'SELL' || rec === 'STRONG_SELL';
     let bgGradient = 'linear-gradient(135deg, #9e6a03, #d29922)';
-    if (isBuy) bgGradient = 'linear-gradient(135deg, #238636, #2ea043)';
-    if (isSell) bgGradient = 'linear-gradient(135deg, #da3633, #f85149)';
+    if (isBull) bgGradient = 'linear-gradient(135deg, #238636, #2ea043)';
+    if (isBear) bgGradient = 'linear-gradient(135deg, #da3633, #f85149)';
 
     if (recBox) recBox.style.background = bgGradient;
-    if (recText) { recText.textContent = rec; recText.style.color = '#fff'; }
-    if (recSub) recSub.textContent = `${Math.round(conf)}% Confidence`;
+    if (recText) {
+      const strengthText = result.signalStrength ? ` (${result.signalStrength})` : '';
+      recText.textContent = `${rec}${strengthText}`;
+      recText.style.color = '#fff';
+    }
+    if (recSub) {
+      const qualityText = result.tradeQualityScore ? ` • Quality: ${result.tradeQualityScore}/100` : '';
+      recSub.textContent = `${Math.round(conf)}% Confidence${qualityText}`;
+    }
     if (confFill) confFill.style.width = `${Math.round(conf)}%`;
 
-    // Trade Setup — validate every numeric field before calling .toFixed()
-    // formatPrice() already has typeof/isFinite guards, so passing undefined returns '---' safely
+    // Trade Setup
     if (entry) {
-      entry.textContent = this.formatPrice(tradePlan?.entryPrice);
+      entry.textContent = this.formatPrice(entryVal);
     }
     if (sl) {
-      sl.textContent = this.formatPrice(tradePlan?.stopLoss);
+      sl.textContent = this.formatPrice(slVal);
     }
     if (tp) {
-      tp.textContent = this.formatPrice(tradePlan?.takeProfit);
+      tp.textContent = this.formatPrice(tpVal);
     }
     if (rr) {
-      const rrVal = tradePlan?.riskRewardRatio;
       rr.textContent = (typeof rrVal === 'number' && Number.isFinite(rrVal))
         ? `${rrVal.toFixed(2)}:1`
         : '---';
     }
 
-
     // Reasoning
     if (reasoning) {
       const fullReasoning = aiExplanation?.explanation
         ? `${userReasoning}\n\n${aiExplanation.explanation}`
-        : (userReasoning || 'No reasoning available.');
+        : (userReasoning ? `• ${userReasoning}` : 'No reasoning available.');
       reasoning.textContent = fullReasoning;
       reasoning.style.maxHeight = '60px';
       reasoning.classList.remove('expanded');
     }
 
-    // Risks — use textContent to prevent XSS when rendering AI-generated content
-    const risks = aiExplanation?.risks || [];
+    // Risks / Contradicting Evidence
+    const risks = result.contradictingEvidence || aiExplanation?.risks || [];
     if (risks.length > 0 && risksList) {
       risksSection.style.display = 'block';
       risksList.textContent = ''; // Clear existing content
-      // Use DOM API (not innerHTML) for AI-generated content to prevent XSS
       for (const riskText of risks) {
         const riskEl = document.createElement('div');
         riskEl.style.cssText = 'display:flex;align-items:start;gap:6px;font-size:10px;color:#8b949e;padding:3px 6px;background:rgba(248,81,73,0.08);border-radius:3px;border-left:2px solid #f85149;margin-bottom:2px;';
@@ -406,7 +416,7 @@ export class ChartOverlay {
         iconSpan.style.cssText = 'color:#f85149;font-size:10px;';
         iconSpan.textContent = '⚠';
         const textSpan = document.createElement('span');
-        textSpan.textContent = riskText;
+        textSpan.textContent = typeof riskText === 'string' ? riskText : JSON.stringify(riskText);
         riskEl.appendChild(iconSpan);
         riskEl.appendChild(textSpan);
         risksList.appendChild(riskEl);

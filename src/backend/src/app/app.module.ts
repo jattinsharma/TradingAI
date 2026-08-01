@@ -10,7 +10,8 @@ import { ConfigModule } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { LoggingInterceptor } from '../common/interceptors/logging.interceptor';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { CacheModule } from '../cache/cache.module';
@@ -33,6 +34,12 @@ import { TradeJournalModule } from '../modules/trade-journal/trade-journal.modul
 import { AiModule } from '../modules/ai/ai.module';
 import { PredictionsModule } from '../modules/predictions/predictions.module';
 import { PerformanceModule } from '../modules/performance/performance.module';
+
+// ═══ AI Engine V2 Modules ═══
+import { MultiAgentModule } from '../modules/multi-agent/multi-agent.module';
+import { MemoryModule } from '../modules/memory/memory.module';
+import { DecisionModule } from '../modules/decision/decision.module';
+import { CoachModule } from '../modules/coach/coach.module';
 
 @Module({
   imports: [
@@ -88,6 +95,12 @@ import { PerformanceModule } from '../modules/performance/performance.module';
     LoggerModule,
     WebsocketModule,
     MonitoringModule,
+
+    // AI Engine V2 — Multi-agent pipeline, memory, decision, coach
+    MultiAgentModule,
+    MemoryModule,
+    DecisionModule,
+    CoachModule,
   ],
   controllers: [AppController],
   providers: [
@@ -95,6 +108,10 @@ import { PerformanceModule } from '../modules/performance/performance.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
     },
   ],
 })

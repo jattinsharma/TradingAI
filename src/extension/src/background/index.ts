@@ -376,6 +376,7 @@ async function handleAnalysisRequest(tabId: number | undefined, payload: any): P
   let symbol = payload.symbol;
   let timeframe = payload.timeframe || '1D';
   let platform = payload.platform || '';
+  let currentPrice = payload.price || payload.currentPrice || 0;
 
   console.log('[Background] Analyzing:', { symbol, timeframe, platform });
 
@@ -387,11 +388,40 @@ async function handleAnalysisRequest(tabId: number | undefined, payload: any): P
 
   console.log('[Background] Selected platform adapter:', platform);
 
-  // Perform analysis via background services
-  if (!analysisOrchestrator) {
-    throw new Error('Analysis orchestrator not initialized');
+  let analysis: any = null;
+
+  // ── 1. Try V2 Multi-Agent Backend Pipeline if Authenticated ──
+  if (tradingCopilotApi.isAuthenticated()) {
+    try {
+      console.log('[Background] Attempting V2 Multi-Agent AI Engine backend request...');
+      const v2Response = await tradingCopilotApi.analyzeV2({
+        symbol,
+        timeframe,
+        depth: payload.depth || 'STANDARD',
+        chartData: {
+          currentPrice: currentPrice || 100,
+          exchange: platform,
+          indicators: payload.indicators || {},
+        },
+      });
+
+      if (v2Response && (v2Response.signal || v2Response.recommendation)) {
+        console.log('[Background] V2 Multi-Agent AI Engine response received successfully!');
+        analysis = mapV2RecommendationToAnalysisResult(v2Response, symbol, timeframe, currentPrice);
+      }
+    } catch (v2Error: any) {
+      console.warn('[Background] V2 AI Engine call failed, falling back to client-side engine:', v2Error.message || v2Error);
+    }
   }
-  const analysis = await analysisOrchestrator.analyze(symbol, timeframe, platform);
+
+  // ── 2. Fallback: Perform local client-side analysis if V2 failed or user unauthenticated ──
+  if (!analysis) {
+    if (!analysisOrchestrator) {
+      throw new Error('Analysis orchestrator not initialized');
+    }
+    console.log('[Background] Running client-side analysis engine...');
+    analysis = await analysisOrchestrator.analyze(symbol, timeframe, platform);
+  }
 
   console.log('[Background] Analysis result:', {
     symbol: analysis.symbol,
@@ -407,34 +437,125 @@ async function handleAnalysisRequest(tabId: number | undefined, payload: any): P
   }
 
   // ── Notify content script of results (async, non-blocking) ──
-  // The primary response is sent back via sendResponse() to the originating message.
-  // These additional notifications are fire-and-forget with proper error callbacks.
   if (tabId) {
     chrome.tabs.sendMessage(tabId, {
       type: 'UPDATE_OVERLAY',
       payload: { analysisResult: analysis }
     }, () => {
       if (chrome.runtime.lastError) {
-        // Tab might have navigated or content script context invalidated — non-critical
         console.warn('[Background] UPDATE_OVERLAY sendMessage error:', chrome.runtime.lastError.message);
       }
     });
   }
 
-  // Also notify popup if open (fire-and-forget with callback to prevent unhandled errors)
+  // Also notify popup if open
   chrome.runtime.sendMessage({
     type: 'ANALYSIS_UPDATE',
     data: analysis
   }, () => {
     if (chrome.runtime.lastError) {
-      // Popup likely closed — ignore, this is expected
-      // LastError: "Could not establish connection. Receiving end does not exist."
+      // Popup closed — ignore
     }
   });
 
-  // Return the analysis result directly to the caller
   return analysis;
-    // NOTE: No try/catch here — errors propagate to handleMessage's outer try/catch
+}
+
+/** Helper to convert V2 TradeRecommendation to extension's AnalysisResult shape */
+function mapV2RecommendationToAnalysisResult(rec: any, symbol: string, timeframe: string, currentPrice?: number): any {
+  const signalMap: Record<string, string> = {
+    'STRONG_BUY': 'STRONG_BUY',
+    'BUY': 'BUY',
+    'BULLISH': 'BUY',
+    'STRONG_BULLISH': 'STRONG_BUY',
+    'NEUTRAL': 'HOLD',
+    'HOLD': 'HOLD',
+    'BEARISH': 'SELL',
+    'STRONG_BEARISH': 'STRONG_SELL',
+    'SELL': 'SELL',
+    'STRONG_SELL': 'STRONG_SELL',
+  };
+
+  const recSignal = signalMap[rec.signal] || 'HOLD';
+  const entryPrice = rec.entry?.price || currentPrice || 0;
+  const stopLoss = rec.stopLoss?.price || 0;
+  const takeProfit = rec.takeProfit1?.price || 0;
+
+  const reasoningText = Array.isArray(rec.reasons)
+    ? rec.reasons.join(' ')
+    : (typeof rec.reasons === 'string' ? rec.reasons : 'Multi-agent consensus analysis complete.');
+
+  return {
+    symbol,
+    timeframe,
+    timestamp: Date.now(),
+    recommendation: recSignal,
+    confidence: typeof rec.confidence === 'number' ? rec.confidence : 50,
+    currentPrice: currentPrice || rec.currentPrice,
+    entryPrice,
+    stopLoss,
+    takeProfit,
+    riskRewardRatio: rec.riskReward || 0,
+    reasoning: reasoningText,
+    indicators: {
+      trend: { signal: rec.trend?.direction === 'UP' ? 'UP' : rec.trend?.direction === 'DOWN' ? 'DOWN' : 'NEUTRAL', strength: (rec.trend?.strength || 50) / 100 },
+      momentum: { signal: rec.momentum?.direction === 'ACCELERATING' ? 'UP' : rec.momentum?.direction === 'DECELERATING' ? 'DOWN' : 'NEUTRAL', strength: (rec.momentum?.score || 50) / 100 },
+      volume: { signal: 'NEUTRAL', strength: 0.5 },
+      volatility: { signal: 'NEUTRAL', strength: 0.5 },
+    },
+    engines: {
+      technical: { signal: recSignal, strength: (rec.confidence || 50) / 100, indicators: {} },
+      pattern: { signal: 'NEUTRAL', strength: 0.5, pattern: 'Multi-Agent Analysis', confidence: rec.confidence || 50 },
+      trend: { signal: rec.trend?.direction || 'NEUTRAL', strength: (rec.trend?.strength || 50) / 100 },
+      supportResistance: {
+        signal: 'NEUTRAL',
+        strength: 0.5,
+        levels: {
+          resistance1: rec.resistance?.[0]?.price || 0,
+          resistance2: rec.resistance?.[1]?.price || 0,
+          support1: rec.support?.[0]?.price || 0,
+          support2: rec.support?.[1]?.price || 0,
+          currentPrice: currentPrice || rec.currentPrice || 0,
+        },
+      },
+      volume: { signal: 'NEUTRAL', strength: 0.5 },
+      momentum: { signal: rec.momentum?.direction || 'NEUTRAL', strength: (rec.momentum?.score || 50) / 100 },
+      news: { signal: 'NEUTRAL', strength: 0.5, articles: [], sentiment: 0.5 },
+      sentiment: { signal: 'NEUTRAL', strength: 0.5 },
+      risk: {
+        signal: 'NEUTRAL',
+        strength: 0.5,
+        riskLevel: rec.tradeQualityScore > 75 ? 'LOW' : rec.tradeQualityScore > 50 ? 'MEDIUM' : 'HIGH',
+        riskScore: 100 - (rec.tradeQualityScore || 50),
+        metrics: { volatility: 0.02, maxDrawdown: 0.1, sharpeRatio: 1.5, valueAtRisk95: 0.05, beta: 1, correlationToMarket: 0.8 }
+      },
+      portfolio: { signal: recSignal, strength: (rec.confidence || 50) / 100 },
+      tradePlanning: {
+        signal: recSignal,
+        strength: (rec.confidence || 50) / 100,
+        confidence: rec.confidence || 50,
+        tradeSetup: {
+          entryPrice,
+          stopLoss,
+          takeProfit,
+          riskRewardRatio: rec.riskReward || 0,
+          positionSizeSuggestion: 1,
+          maxHoldTime: rec.holdingPeriod || '1D',
+        },
+        reasoning: reasoningText,
+      },
+      aiExplanation: {
+        signal: recSignal,
+        strength: (rec.confidence || 50) / 100,
+        explanation: reasoningText,
+        confidence: rec.confidence || 50,
+        keyFactors: rec.reasons || [],
+        risks: rec.contradictingEvidence || [],
+        timeframeSuitability: 'HIGH',
+      },
+    },
+    v2: rec,
+  };
 }
 
 /**
