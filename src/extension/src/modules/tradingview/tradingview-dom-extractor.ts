@@ -140,47 +140,78 @@ export interface TradingViewMarketData {
  */
 export function extractFromTradingViewDOM(): TradingViewMarketData {
   // ── Symbol ──
+  // Priority 1: URL query parameter (most reliable — always matches the active chart)
   let symbol = '';
-  for (const selector of SYMBOL_SELECTORS) {
-    const text = trySelector(selector);
-    if (text) {
-      const normalized = normalizeSymbol(text);
-      if (normalized.length >= 2 && normalized.length <= 20) {
-        symbol = normalized;
-        break;
-      }
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const symParam = urlParams.get('symbol');
+    if (symParam) {
+      symbol = normalizeSymbol(symParam);
     }
-  }
+  } catch { /* ignore */ }
 
-  // Fallback: parse from URL
+  // Priority 2: URL path pattern (e.g., /symbols/NASDAQ:AAPL/)
   if (!symbol) {
     try {
       const path = window.location.pathname;
-      // TradingView URL patterns: /chart/...SYMBOL... or /symbols/SYMBOL/
       const match = path.match(/\/symbol[s]?\/([A-Za-z0-9_:%-]+)/i);
       if (match) {
         const raw = decodeURIComponent(match[1]);
         symbol = normalizeSymbol(raw);
       }
-      // URL query param
-      if (!symbol) {
-        const urlParams = new URLSearchParams(window.location.search);
-        const symParam = urlParams.get('symbol');
-        if (symParam) {
-          symbol = normalizeSymbol(symParam);
+    } catch { /* ignore */ }
+  }
+
+  // Priority 3: Primary DOM selectors (specific to chart header, NOT sidebar/watchlist)
+  if (!symbol) {
+    // These selectors target the main chart header only
+    const primarySelectors = [
+      '[data-name="header-token-symbol"]',
+      '[class*="header-chart-panel"] [class*="symbol"]',
+    ];
+    for (const selector of primarySelectors) {
+      const text = trySelector(selector);
+      if (text) {
+        const normalized = normalizeSymbol(text);
+        if (normalized.length >= 2 && normalized.length <= 20) {
+          symbol = normalized;
+          break;
         }
       }
-    } catch {
-      // ignore
     }
   }
 
-  // Fallback: extract from document title
+  // Priority 4: Document title (e.g., "USDINR 95.38 ▲ +0.01% — TradingView")
   if (!symbol) {
     const title = document.title;
-    const match = title.match(/[A-Z]{2,10}\/?[A-Z]{2,6}/);
-    if (match) {
-      symbol = normalizeSymbol(match[0]);
+    // TradingView titles often start with the symbol followed by price
+    const titleMatch = title.match(/^([A-Z][A-Z0-9./]{1,15})/);
+    if (titleMatch) {
+      symbol = normalizeSymbol(titleMatch[1]);
+    } else {
+      // Fallback: any uppercase symbol-like pattern in title
+      const fallbackMatch = title.match(/[A-Z]{2,10}\/?[A-Z]{2,6}/);
+      if (fallbackMatch) {
+        symbol = normalizeSymbol(fallbackMatch[0]);
+      }
+    }
+  }
+
+  // Priority 5: Generic DOM selectors (less reliable — may pick up sidebar widgets)
+  if (!symbol) {
+    const fallbackSelectors = [
+      '[class*="ticker"]',
+      '[class*="toolbar"] [class*="button"][class*="active"]',
+    ];
+    for (const selector of fallbackSelectors) {
+      const text = trySelector(selector);
+      if (text) {
+        const normalized = normalizeSymbol(text);
+        if (normalized.length >= 2 && normalized.length <= 20) {
+          symbol = normalized;
+          break;
+        }
+      }
     }
   }
 

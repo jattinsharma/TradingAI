@@ -292,17 +292,24 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Analyze Button ──
   function updateAnalyzeButton(symbol: string | null, timeframe: string | null, failureReason?: string, failureSuggestion?: string): void {
     if (symbol && timeframe) {
+      (analyzeBtn as HTMLButtonElement).disabled = false;
       analyzeBtn.textContent = `⚡ ANALYZE ${symbol} (${timeframe})`;
       analyzeBtn.className = 'analyze-btn ready';
       analyzeBtn.title = '';
     } else if (symbol) {
+      (analyzeBtn as HTMLButtonElement).disabled = false;
       analyzeBtn.textContent = `⚡ ANALYZE ${symbol}`;
       analyzeBtn.className = 'analyze-btn ready';
       analyzeBtn.title = '';
+    } else if (failureReason === 'UNSUPPORTED_PLATFORM') {
+      (analyzeBtn as HTMLButtonElement).disabled = true;
+      analyzeBtn.textContent = '🚫 NOT A TRADING APP';
+      analyzeBtn.className = 'analyze-btn error';
+      analyzeBtn.title = failureSuggestion || 'Trading Copilot only works on supported trading websites (TradingView, Binance, Bybit, Coinbase, Zerodha, Upstox, AngelOne, Groww)';
     } else {
+      (analyzeBtn as HTMLButtonElement).disabled = false;
       analyzeBtn.textContent = '⚠ NO CHART DETECTED';
       analyzeBtn.className = 'analyze-btn error';
-      // Show detailed failure reason as tooltip
       analyzeBtn.title = failureSuggestion || 'Open a supported trading chart first';
       if (failureReason) {
         console.log('[Popup] Chart detection failed:', failureReason, '-', failureSuggestion);

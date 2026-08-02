@@ -172,7 +172,7 @@ function setupListeners(): void {
 
   // Set up context menus (separate from onInstalled to avoid double creation)
   chrome.contextMenus.onClicked.addListener((info, tab) => {
-    if (info.menuItemId === 'analyze-selection' && tab && tab.id) {
+    if (info.menuItemId === 'analyze-selection' && tab && tab.id && isTradingUrl(tab.url)) {
       chrome.tabs.sendMessage(tab.id, {
         type: 'REQUEST_ANALYSIS',
         payload: { text: info.selectionText }
@@ -228,7 +228,7 @@ async function handleAlarm(alarm: any): Promise<void> {
         });
       });
 
-      if (tabs[0] && tabs[0].id) {
+      if (tabs[0] && tabs[0].id && isTradingUrl(tabs[0].url)) {
         // Send message to content script to trigger analysis
         chrome.tabs.sendMessage(tabs[0].id, { type: 'TRIGGER_ANALYSIS' });
       }
@@ -1009,6 +1009,34 @@ async function initializeDefaultSettings(): Promise<void> {
   }
 }
 
+const TRADING_DOMAINS = [
+  'tradingview.com',
+  'binance.com',
+  'binance.us',
+  'bybit.com',
+  'coinbase.com',
+  'exchange.coinbase.com',
+  'kraken.com',
+  'zerodha.com',
+  'kite.zerodha.com',
+  'upstox.com',
+  'angelone.in',
+  'angelbroking.com',
+  'groww.in',
+  'metatrader5.com',
+  'mt5.com'
+];
+
+function isTradingUrl(url?: string): boolean {
+  if (!url) return false;
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    return TRADING_DOMAINS.some(domain => hostname.includes(domain));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * GET_CHART_STATE handler — returns cached ChartState with freshness check.
  *
@@ -1034,6 +1062,25 @@ async function handleGetChartState(tabId: number, sendResponse: (response?: any)
   console.log('[Background] ChartState cache STALE or MISSING, requesting refresh from tab', tabId);
 
   try {
+    const tab = await new Promise<chrome.tabs.Tab | undefined>((resolve) => {
+      chrome.tabs.get(tabId, (t) => {
+        if (chrome.runtime.lastError) resolve(undefined);
+        else resolve(t);
+      });
+    });
+
+    if (tab && tab.url && !isTradingUrl(tab.url)) {
+      console.log('[Background] Active tab URL is not a supported trading website:', tab.url);
+      sendResponse({
+        symbol: null, timeframe: null, price: null, platform: null,
+        isDetected: false,
+        failureReason: 'UNSUPPORTED_PLATFORM',
+        failureSuggestion: 'Trading Copilot only works on supported trading websites (TradingView, Binance, Bybit, Coinbase, Zerodha, Upstox, AngelOne, Groww). Open a trading chart to use AI Copilot.',
+        status: 'Not a trading website',
+        extractedAt: now,
+      });
+      return;
+    }
     const response = await new Promise<any>((resolve) => {
       const timeout = setTimeout(() => {
         resolve({ timeout: true });
