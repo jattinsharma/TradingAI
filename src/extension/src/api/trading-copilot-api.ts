@@ -232,7 +232,8 @@ export class TradingCopilotApi {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+        // 45s timeout to allow Render free tier instances to spin up on cold start
+        const timeoutId = setTimeout(() => controller.abort(), 45000);
 
         const response = await fetch(url, {
           method,
@@ -319,6 +320,17 @@ export class TradingCopilotApi {
       'POST',
       '/auth/register',
       { email, password, name },
+    );
+    this.jwtToken = result.access_token;
+    this.refreshToken = result.refresh_token;
+    return result;
+  }
+
+  async loginWithGoogle(payload: { credential?: string; email?: string; name?: string; googleId?: string; picture?: string }): Promise<AuthResponse> {
+    const result = await this.request<AuthResponse>(
+      'POST',
+      '/auth/google',
+      payload,
     );
     this.jwtToken = result.access_token;
     this.refreshToken = result.refresh_token;

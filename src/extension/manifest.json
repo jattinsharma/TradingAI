@@ -38,7 +38,8 @@
     "notifications",
     "alarms",
     "scripting",
-    "contextMenus"
+    "contextMenus",
+    "identity"
   ],
   "host_permissions": [
     "https://*.tradingview.com/*",

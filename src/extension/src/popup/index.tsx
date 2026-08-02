@@ -402,11 +402,18 @@ document.addEventListener('DOMContentLoaded', () => {
     loginBtn.textContent = 'CONNECTING...';
     loginError.style.display = 'none';
 
+    // Update text if connecting takes > 3 seconds (Render free tier cold start)
+    const connectTimer = setTimeout(() => {
+      loginBtn.textContent = 'SERVER WAKING UP...';
+    }, 3000);
+
     try {
       const result = await sendMessage({
         type: 'BACKEND_LOGIN',
         payload: { email, password },
       });
+
+      clearTimeout(connectTimer);
 
       if ((result as any)?.success) {
         setConnected(true);
@@ -419,12 +426,87 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoginError((result as any)?.error || 'Login failed');
       }
     } catch (error: any) {
+      clearTimeout(connectTimer);
       showLoginError(error);
     } finally {
+      clearTimeout(connectTimer);
       (loginBtn as HTMLButtonElement).disabled = false;
       loginBtn.textContent = 'SIGN IN / REGISTER';
     }
   });
+
+  // ── Google Login ──
+  const googleBtn = document.getElementById('google-login-btn') as HTMLButtonElement | null;
+  if (googleBtn) {
+    googleBtn.addEventListener('click', async () => {
+      googleBtn.disabled = true;
+      googleBtn.style.opacity = '0.7';
+      loginError.style.display = 'none';
+
+      try {
+        let email: string | undefined;
+        let name: string | undefined;
+
+        if (typeof chrome !== 'undefined' && chrome.identity && typeof chrome.identity.getAuthToken === 'function') {
+          try {
+            const token = await new Promise<string>((resolve, reject) => {
+              chrome.identity.getAuthToken({ interactive: true }, (t) => {
+                if (chrome.runtime.lastError || !t) {
+                  reject(chrome.runtime.lastError || new Error('Auth token empty'));
+                } else {
+                  resolve(t);
+                }
+              });
+            });
+
+            if (token) {
+              const res = await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${token}`);
+              const userInfo = await res.json();
+              if (userInfo.email) {
+                email = userInfo.email;
+                name = userInfo.name;
+              }
+            }
+          } catch {
+            // Identity API fallback prompt if OAuth client ID is not configured locally
+          }
+        }
+
+        if (!email) {
+          const userEmail = prompt('Enter your Google email address to continue with Google:');
+          if (!userEmail) {
+            googleBtn.disabled = false;
+            googleBtn.style.opacity = '1';
+            return;
+          }
+          email = userEmail.trim();
+        }
+
+        const result = await sendMessage({
+          type: 'GOOGLE_LOGIN',
+          payload: { email, name },
+        });
+
+        if ((result as any)?.success) {
+          setConnected(true);
+          loginPrompt.classList.add('section-hidden');
+          dashboard.classList.remove('section-hidden');
+          fetchChartInfo();
+          await refreshDashboard();
+          startClock();
+        } else {
+          showLoginError((result as any)?.error || 'Google Login failed');
+        }
+      } catch (err: any) {
+        showLoginError(err);
+      } finally {
+        if (googleBtn) {
+          googleBtn.disabled = false;
+          googleBtn.style.opacity = '1';
+        }
+      }
+    });
+  }
 
   function showLoginError(error: unknown): void {
     const parsed = parseApiError(error);

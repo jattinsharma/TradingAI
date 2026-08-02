@@ -268,6 +268,9 @@ async function handleMessage(message: any, sender: chrome.runtime.MessageSender,
       case 'BACKEND_LOGIN':
         await handleBackendLogin(message.payload, sendResponse);
         return;
+      case 'GOOGLE_LOGIN':
+        await handleGoogleLogin(message.payload, sendResponse);
+        return;
       case 'UPDATE_BACKEND_URL':
         handleUpdateBackendUrl(message.payload, sendResponse);
         return;
@@ -708,7 +711,20 @@ async function handleBackendLogin(payload: any, sendResponse: (response?: any) =
       return;
     }
 
-    const result = await tradingCopilotApi.login(email, password);
+    let result: any;
+    try {
+      result = await tradingCopilotApi.login(email, password);
+    } catch (loginErr: any) {
+      const errStr = String(loginErr.message || loginErr);
+      // If login failed due to invalid credentials, attempt auto-registration
+      if (errStr.includes('401') || errStr.includes('Unauthorized') || errStr.includes('Invalid credentials')) {
+        console.log('[Background] Login failed, attempting auto-registration for:', email);
+        const name = email.split('@')[0];
+        result = await tradingCopilotApi.register(email, password, name);
+      } else {
+        throw loginErr;
+      }
+    }
 
     // Store tokens in chrome.storage
     if (storage) {
@@ -719,14 +735,40 @@ async function handleBackendLogin(payload: any, sendResponse: (response?: any) =
         connectedAt: Date.now(),
       });
 
-      // Log the stored refresh token status
-      console.log('[Background] Login successful, refresh token stored:', !!result.refresh_token);
+      console.log('[Background] Auth successful, user authenticated:', result.user.email);
 
       // Also cache recent analyses
       try {
         const stats = await tradingCopilotApi.getAnalysisStats();
         await storage.set('cachedStats', stats);
       } catch { /* ignore */ }
+    }
+
+    sendResponse({ success: true, user: result.user });
+  } catch (error: any) {
+    const message = error instanceof Error ? error.message : String(error);
+    sendResponse({ success: false, error: message });
+  }
+}
+
+// Handle Google login
+async function handleGoogleLogin(payload: any, sendResponse: (response?: any) => void): Promise<void> {
+  if (!isInitialized) {
+    sendResponse({ success: false, error: 'Service not initialized' });
+    return;
+  }
+
+  try {
+    const result = await tradingCopilotApi.loginWithGoogle(payload);
+
+    if (storage) {
+      await storage.set('backendAuth', {
+        jwtToken: result.access_token,
+        refreshToken: result.refresh_token,
+        user: result.user,
+        connectedAt: Date.now(),
+      });
+      console.log('[Background] Google login successful:', result.user.email);
     }
 
     sendResponse({ success: true, user: result.user });

@@ -18,6 +18,7 @@ import { Throttle } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { GoogleLoginDto } from './dto/google-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @ApiTags('Authentication')
@@ -44,6 +45,14 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 attempts per minute
   async login(@Request() req: { user: { id: string; email: string; name: string } }) {
     return this.authService.login(req.user);
+  }
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Login or register using Google credentials' })
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  async googleLogin(@Body() dto: GoogleLoginDto) {
+    return this.authService.googleLogin(dto);
   }
 
   @Post('refresh')
