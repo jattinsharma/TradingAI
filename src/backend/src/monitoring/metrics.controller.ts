@@ -38,7 +38,8 @@ export class MetricsController {
     checks.redis = redisOk ? 'ok' : 'degraded';
 
     // Check AI
-    checks.ai = this.aiService.isAvailable() ? 'ok' : 'degraded';
+    const aiAvailable = await this.aiService.isAvailable();
+    checks.ai = aiAvailable ? 'ok' : 'degraded';
 
     // Check database connectivity (via env)
     checks.database = process.env.MONGODB_URI ? 'configured' : 'not-configured';
@@ -85,9 +86,10 @@ export class MetricsController {
     lines.push(`redis_up ${redisOk ? 1 : 0}`);
 
     // AI
+    const aiAvailable = await this.aiService.isAvailable();
     lines.push('# HELP ai_available AI service availability (1 = available, 0 = unavailable)');
     lines.push('# TYPE ai_available gauge');
-    lines.push(`ai_available ${this.aiService.isAvailable() ? 1 : 0}`);
+    lines.push(`ai_available ${aiAvailable ? 1 : 0}`);
 
     // WebSocket connections
     lines.push('# HELP websocket_connections Current WebSocket connections');

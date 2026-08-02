@@ -8,17 +8,19 @@ export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   @Get('status')
-  @ApiOperation({ summary: 'Check Ollama AI service availability' })
-  getStatus() {
+  @ApiOperation({ summary: 'Check AI service availability' })
+  async getStatus() {
+    const available = await this.aiService.isAvailable();
+    const activeModel = this.aiService.getActiveModel();
     return {
-      available: this.aiService.isAvailable(),
-      activeModel: this.aiService.getActiveModel(),
+      available,
+      activeModel,
     };
   }
 
   @Get('models')
   @ApiOperation({ summary: 'Get available AI models' })
-  getModels() {
+  async getModels() {
     return {
       active: this.aiService.getActiveModel(),
       available: this.aiService.getAvailableModels(),
@@ -36,7 +38,7 @@ export class AiController {
   }
 
   @Post('analyze')
-  @ApiOperation({ summary: 'Analyze market data using local AI (Ollama)' })
+  @ApiOperation({ summary: 'Analyze market data using AI' })
   @ApiBody({
     schema: {
       type: 'object',
@@ -51,9 +53,10 @@ export class AiController {
     },
   })
   async analyze(@Body() request: AiAnalysisRequest) {
-    if (!this.aiService.isAvailable()) {
+    const available = await this.aiService.isAvailable();
+    if (!available) {
       throw new HttpException(
-        'Ollama is not running. Start it with: ollama serve. Install from https://ollama.com',
+        'No AI providers are available. Please check your API keys and connections.',
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }

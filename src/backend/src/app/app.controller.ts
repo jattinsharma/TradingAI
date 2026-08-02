@@ -19,7 +19,7 @@ export class AppController {
     let aiAvailable = false;
     if (this.aiService) {
       try {
-        aiAvailable = this.aiService.isAvailable();
+        aiAvailable = await this.aiService.isAvailable();
       } catch {
         aiAvailable = false;
       }
